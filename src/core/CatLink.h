@@ -36,7 +36,8 @@ public:
     // Fire-and-forget set command. An empty key means "never coalesce".
     void send(const QByteArray &command, const QByteArray &coalesceKey = {});
     // Read command; completes when a frame starting with replyPrefix arrives
-    // (default: the command without its ';'). Duplicate queued queries collapse.
+    // (default: the command without its ';'). An identical queued query absorbs
+    // this one unless a set command is queued after it.
     void query(const QByteArray &command, const QByteArray &replyPrefix = {});
     // Drops everything not yet sent.
     void clear();

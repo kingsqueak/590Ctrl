@@ -88,14 +88,15 @@ private slots:
         link.send("AG0010;", "AG");
         link.send("AG0020;", "AG");
         link.query("ID;");
+        link.query("ID;");   // duplicate of the queued query just before it: dropped
         link.send("SQ0005;", "SQ");
         link.send("AG0030;", "AG");
-        link.query("ID;");   // duplicate of a queued query is dropped
-        QCOMPARE(link.pendingCount(), 4);
+        link.query("ID;");   // a set is queued after the first ID;: kept
+        QCOMPARE(link.pendingCount(), 5);
         t->inject("FA00014195000;");
         QTRY_COMPARE(t->written, QByteArrayList({"FA;", "AG0030;", "ID;"}));
         t->inject("ID023;");
-        QTRY_COMPARE(t->written, QByteArrayList({"FA;", "AG0030;", "ID;", "SQ0005;"}));
+        QTRY_COMPARE(t->written, QByteArrayList({"FA;", "AG0030;", "ID;", "SQ0005;", "ID;"}));
     }
 
     void queryTimesOut()

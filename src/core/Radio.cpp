@@ -149,6 +149,11 @@ void Radio::refreshEq()
     }
 }
 
+void Radio::refreshEqLevels(EqType type)
+{
+    m_link.query(cmd::readEqLevels(type));
+}
+
 void Radio::pollMeter()
 {
     if (m_state == State::Connected && m_meterPolling && m_link.pendingCount() < 3)

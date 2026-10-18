@@ -23,6 +23,8 @@ qt_add_library(ts590core STATIC
     src/core/SimulatorTransport.h src/core/SimulatorTransport.cpp
     src/core/CatLink.h src/core/CatLink.cpp
     src/core/Radio.h src/core/Radio.cpp
+    src/core/EqPresetLibrary.h src/core/EqPresetLibrary.cpp
+    src/core/EqAutoLoader.h src/core/EqAutoLoader.cpp
 )
 target_include_directories(ts590core PUBLIC src/core)
 target_link_libraries(ts590core PUBLIC Qt6::Core Qt6::SerialPort)
@@ -43,7 +45,7 @@ set_target_properties(590Ctrl PROPERTIES
 )
 
 if(BUILD_TESTING)
-    foreach(test tst_catcodec tst_catlink tst_radio)
+    foreach(test tst_catcodec tst_catlink tst_radio tst_eqpresets)
         qt_add_executable(${test} tests/${test}.cpp)
         target_link_libraries(${test} PRIVATE ts590core Qt6::Test)
         add_test(NAME ${test} COMMAND ${test})

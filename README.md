@@ -57,6 +57,20 @@ No radio handy? Pick **Simulator (no radio)** as the port.
   the radio.
 * TX EQ is fixed OFF in CW and FSK.
 
+### Presets and auto-load
+
+Each EQ panel has a preset library: **Save As…** stores the current levels
+under a name, **Apply** writes the selected preset to the radio, and
+**More → Import/Export** moves presets in and out as JSON files. Presets live
+in the app data directory (`~/Library/Application Support/590Ctrl/590Ctrl/eq-presets`
+on macOS, `~/.local/share/590Ctrl/590Ctrl/eq-presets` on Linux).
+
+The radio has only one User curve, so **Auto-load into U** gives each mode
+family its own curve anyway. Link a preset to the current mode family (e.g.
+"Speech" for SSB, "Data RX" for SSB-DATA). When you enter that mode and its
+curve is U, 590Ctrl writes the preset into the User curve. Choosing
+**(none)** leaves U as it is.
+
 ## Layout
 
 | Path | Contents |

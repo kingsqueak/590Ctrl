@@ -71,6 +71,7 @@ public:
     // U curve per EQ type, shared by all mode families (verified on hardware).
     void setEqLevels(EqType type, const EqLevels &levels);
     void refreshEq();
+    void refreshEqLevels(EqType type);
 
     void setMeterPolling(bool on);
 

@@ -1,27 +1,28 @@
 #include "EqualizerPanel.h"
 
+#include "EqPresetLibrary.h"
+
 #include <QComboBox>
-#include <QFile>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QGridLayout>
 #include <QHBoxLayout>
-#include <QJsonArray>
-#include <QJsonDocument>
-#include <QJsonObject>
+#include <QInputDialog>
 #include <QLabel>
+#include <QMenu>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QSettings>
 #include <QSlider>
 #include <QStandardPaths>
+#include <QToolButton>
 #include <QVBoxLayout>
 
 using namespace ts590;
 
 namespace {
 
-constexpr auto kPresetFormat = "590ctrl-eq";
-constexpr int kPresetVersion = 1;
+const QString kExportDirKey = QStringLiteral("eq/presetDir");
 
 QString bandLabel(int band)
 {
@@ -34,11 +35,19 @@ QString dbLabel(int db)
     return db > 0 ? QStringLiteral("+%1").arg(db) : QString::number(db);
 }
 
+QString exportDirectory()
+{
+    return QSettings()
+        .value(kExportDirKey, QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation))
+        .toString();
+}
+
 }   // namespace
 
-EqualizerPanel::EqualizerPanel(EqType type, QWidget *parent)
+EqualizerPanel::EqualizerPanel(EqType type, EqPresetLibrary *library, QWidget *parent)
     : QGroupBox(type == EqType::Rx ? tr("RX Equalizer") : tr("TX Equalizer"), parent)
     , m_type(type)
+    , m_library(library)
 {
     m_curveCombo = new QComboBox;
     for (int curve = int(EqCurve::Off); curve <= int(EqCurve::User); ++curve)
@@ -68,7 +77,7 @@ EqualizerPanel::EqualizerPanel(EqType type, QWidget *parent)
         slider->setPageStep(3);
         slider->setTickPosition(QSlider::TicksBothSides);
         slider->setTickInterval(6);
-        slider->setMinimumHeight(160);
+        slider->setMinimumHeight(140);
         slider->setToolTip(tr("%1 Hz").arg(eqBandFrequencyHz(band)));
         connect(slider, &QSlider::valueChanged, this, [this, band] { onSliderChanged(band); });
 
@@ -83,6 +92,26 @@ EqualizerPanel::EqualizerPanel(EqType type, QWidget *parent)
         m_valueLabels.append(value);
     }
 
+    auto *layout = new QVBoxLayout(this);
+    layout->addLayout(header);
+    layout->addLayout(bands);
+    layout->addLayout(createPresetRow());
+    layout->addLayout(createAutoLoadRow());
+
+    connect(library, &EqPresetLibrary::presetsChanged, this, [this](EqType changed) {
+        if (changed == m_type)
+            refreshPresets();
+    });
+    connect(library, &EqPresetLibrary::bindingsChanged, this, [this](EqType changed) {
+        if (changed == m_type)
+            refreshBinding();
+    });
+    refreshPresets();
+    updateEnabledState();
+}
+
+QLayout *EqualizerPanel::createPresetRow()
+{
     m_flatButton = new QPushButton(tr("Flat"));
     m_flatButton->setToolTip(tr("Set every band to 0 dB"));
     connect(m_flatButton, &QPushButton::clicked, this, [this] {
@@ -92,25 +121,65 @@ EqualizerPanel::EqualizerPanel(EqType type, QWidget *parent)
     m_reloadButton = new QPushButton(tr("Reload"));
     m_reloadButton->setToolTip(tr("Read the curve and levels back from the radio"));
     connect(m_reloadButton, &QPushButton::clicked, this, &EqualizerPanel::reloadRequested);
-    m_loadButton = new QPushButton(tr("Load…"));
-    connect(m_loadButton, &QPushButton::clicked, this, &EqualizerPanel::loadPreset);
-    m_saveButton = new QPushButton(tr("Save…"));
-    connect(m_saveButton, &QPushButton::clicked, this, &EqualizerPanel::savePreset);
 
-    auto *buttons = new QHBoxLayout;
-    buttons->addWidget(m_flatButton);
-    buttons->addWidget(m_reloadButton);
-    buttons->addStretch();
-    buttons->addWidget(m_loadButton);
-    buttons->addWidget(m_saveButton);
+    m_presetCombo = new QComboBox;
+    m_presetCombo->setMinimumContentsLength(16);
+    m_presetCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    m_presetCombo->setPlaceholderText(tr("No presets"));
+    connect(m_presetCombo, &QComboBox::currentIndexChanged, this, &EqualizerPanel::updateEnabledState);
 
-    auto *layout = new QVBoxLayout(this);
-    layout->addLayout(header);
-    layout->addLayout(bands);
-    layout->addLayout(buttons);
+    m_applyButton = new QPushButton(tr("Apply"));
+    m_applyButton->setToolTip(tr("Write the selected preset to the radio"));
+    connect(m_applyButton, &QPushButton::clicked, this, &EqualizerPanel::applyPreset);
+    m_saveAsButton = new QPushButton(tr("Save As…"));
+    m_saveAsButton->setToolTip(tr("Save the current levels as a named preset"));
+    connect(m_saveAsButton, &QPushButton::clicked, this, &EqualizerPanel::savePresetAs);
+    m_deleteButton = new QPushButton(tr("Delete"));
+    connect(m_deleteButton, &QPushButton::clicked, this, &EqualizerPanel::deletePreset);
 
-    updateEnabledState();
+    auto *menu = new QMenu(this);
+    menu->addAction(tr("Import…"), this, &EqualizerPanel::importPreset);
+    m_exportAction = menu->addAction(tr("Export…"), this, &EqualizerPanel::exportPreset);
+    m_moreButton = new QToolButton;
+    m_moreButton->setText(tr("More"));
+    m_moreButton->setMenu(menu);
+    m_moreButton->setPopupMode(QToolButton::InstantPopup);
+    // Leave room for the menu arrow, which some styles draw over the text.
+    m_moreButton->setMinimumWidth(m_moreButton->fontMetrics().horizontalAdvance(m_moreButton->text()) + 28);
+
+    auto *row = new QHBoxLayout;
+    row->addWidget(m_flatButton);
+    row->addWidget(m_reloadButton);
+    row->addStretch();
+    row->addWidget(new QLabel(tr("Preset:")));
+    row->addWidget(m_presetCombo);
+    row->addWidget(m_applyButton);
+    row->addWidget(m_saveAsButton);
+    row->addWidget(m_deleteButton);
+    row->addWidget(m_moreButton);
+    return row;
 }
+
+QLayout *EqualizerPanel::createAutoLoadRow()
+{
+    m_autoLoadLabel = new QLabel;
+    m_autoLoadCombo = new QComboBox;
+    m_autoLoadCombo->setMinimumContentsLength(16);
+    m_autoLoadCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    m_autoLoadCombo->setToolTip(tr("The radio has one User curve shared by all modes. When this mode's curve is "
+                                   "U, the chosen preset is written into it automatically on entering the mode."));
+    connect(m_autoLoadCombo, &QComboBox::activated, this, [this](int index) {
+        m_library->setBinding(m_type, m_mode, m_autoLoadCombo->itemData(index).toString());
+    });
+
+    auto *row = new QHBoxLayout;
+    row->addStretch();
+    row->addWidget(m_autoLoadLabel);
+    row->addWidget(m_autoLoadCombo);
+    return row;
+}
+
+// ---------------------------------------------------------------- radio state
 
 void EqualizerPanel::setConnected(bool connected)
 {
@@ -124,7 +193,10 @@ void EqualizerPanel::setConnected(bool connected)
 
 void EqualizerPanel::setEqMode(EqMode mode)
 {
-    m_mode = mode;
+    if (mode != m_mode) {
+        m_mode = mode;
+        refreshBinding();
+    }
     updateEnabledState();
 }
 
@@ -176,16 +248,22 @@ void EqualizerPanel::updateEnabledState()
 {
     const bool selectable = eqCurveSelectable(m_type, m_mode);
     const bool editable = m_connected && m_curve && *m_curve != EqCurve::Off && m_haveLevels;
+    const bool hasPreset = !selectedPreset().isEmpty();
 
     m_curveCombo->setEnabled(m_connected && m_curve && selectable);
     for (QSlider *slider : std::as_const(m_sliders))
         slider->setEnabled(editable);
     m_flatButton->setEnabled(editable);
-    m_loadButton->setEnabled(editable);
     m_reloadButton->setEnabled(m_connected);
-    m_saveButton->setEnabled(m_haveLevels);
+    m_applyButton->setEnabled(editable && hasPreset);
+    m_saveAsButton->setEnabled(m_haveLevels);
+    m_deleteButton->setEnabled(hasPreset);
+    m_exportAction->setEnabled(hasPreset);
+    m_autoLoadCombo->setEnabled(m_connected && selectable);
+    m_autoLoadLabel->setEnabled(m_connected && selectable);
 
     const QString mode = eqModeName(m_mode);
+    m_autoLoadLabel->setText(tr("Auto-load into U in %1:").arg(mode));
     QString hint;
     if (!m_connected)
         hint = tr("Not connected");
@@ -202,67 +280,111 @@ void EqualizerPanel::updateEnabledState()
     m_hint->setText(hint);
 }
 
-void EqualizerPanel::savePreset()
+// -------------------------------------------------------------------- presets
+
+QString EqualizerPanel::selectedPreset() const
 {
-    QSettings settings;
-    const QString dirKey = QStringLiteral("eq/presetDir");
-    const QString dir = settings.value(dirKey, QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)).toString();
-    const QString suggested = dir + (m_type == EqType::Rx ? QStringLiteral("/rx-eq.json") : QStringLiteral("/tx-eq.json"));
-    const QString path = QFileDialog::getSaveFileName(this, tr("Save EQ Preset"), suggested, tr("EQ presets (*.json)"));
-    if (path.isEmpty())
-        return;
-
-    QJsonArray bandsHz;
-    QJsonArray levelsDb;
-    const EqLevels levels = currentLevels();
-    for (int band = 0; band < kEqBandCount; ++band) {
-        bandsHz.append(eqBandFrequencyHz(band));
-        levelsDb.append(eqRawToDb(levels[band]));
-    }
-    const QJsonObject preset{
-        {QStringLiteral("format"), QString::fromLatin1(kPresetFormat)},
-        {QStringLiteral("version"), kPresetVersion},
-        {QStringLiteral("type"), m_type == EqType::Rx ? QStringLiteral("rx") : QStringLiteral("tx")},
-        {QStringLiteral("bands_hz"), bandsHz},
-        {QStringLiteral("levels_db"), levelsDb},
-    };
-
-    QFile file(path);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)
-        || file.write(QJsonDocument(preset).toJson()) < 0) {
-        QMessageBox::warning(this, tr("Save EQ Preset"), tr("Could not write %1:\n%2").arg(path, file.errorString()));
-        return;
-    }
-    settings.setValue(dirKey, QFileInfo(path).absolutePath());
+    return m_presetCombo->currentIndex() >= 0 ? m_presetCombo->currentText() : QString();
 }
 
-void EqualizerPanel::loadPreset()
+void EqualizerPanel::selectPreset(const QString &name)
 {
-    QSettings settings;
-    const QString dirKey = QStringLiteral("eq/presetDir");
-    const QString dir = settings.value(dirKey, QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)).toString();
-    const QString path = QFileDialog::getOpenFileName(this, tr("Load EQ Preset"), dir, tr("EQ presets (*.json)"));
+    m_presetCombo->setCurrentIndex(m_presetCombo->findText(name));
+}
+
+void EqualizerPanel::refreshPresets()
+{
+    const QString selected = selectedPreset();
+    const QStringList names = m_library->names(m_type);
+    {
+        const QSignalBlocker blocker(m_presetCombo);
+        m_presetCombo->clear();
+        m_presetCombo->addItems(names);
+        m_presetCombo->setCurrentIndex(names.isEmpty() ? -1 : std::max(0, int(names.indexOf(selected))));
+    }
+    refreshBinding();
+    updateEnabledState();
+}
+
+void EqualizerPanel::refreshBinding()
+{
+    const QSignalBlocker blocker(m_autoLoadCombo);
+    m_autoLoadCombo->clear();
+    m_autoLoadCombo->addItem(tr("(none)"), QString());
+    for (const QString &name : m_library->names(m_type))
+        m_autoLoadCombo->addItem(name, name);
+    m_autoLoadCombo->setCurrentIndex(std::max(0, m_autoLoadCombo->findData(m_library->binding(m_type, m_mode))));
+}
+
+void EqualizerPanel::applyPreset()
+{
+    const auto levels = m_library->levels(m_type, selectedPreset());
+    if (!levels)
+        return;
+    showLevels(*levels, true);
+    emit levelsEdited(currentLevels());
+}
+
+void EqualizerPanel::savePresetAs()
+{
+    bool ok = false;
+    const QString name = QInputDialog::getText(this, tr("Save EQ Preset"), tr("Preset name:"), QLineEdit::Normal,
+                                               selectedPreset(), &ok)
+                             .trimmed();
+    if (!ok || name.isEmpty())
+        return;
+    if (m_library->contains(m_type, name)
+        && QMessageBox::question(this, tr("Save EQ Preset"), tr("Replace the existing preset “%1”?").arg(name))
+               != QMessageBox::Yes)
+        return;
+    QString error;
+    if (!m_library->save(m_type, name, currentLevels(), &error)) {
+        QMessageBox::warning(this, tr("Save EQ Preset"), error);
+        return;
+    }
+    selectPreset(name);
+}
+
+void EqualizerPanel::deletePreset()
+{
+    const QString name = selectedPreset();
+    if (name.isEmpty()
+        || QMessageBox::question(this, tr("Delete EQ Preset"), tr("Delete the preset “%1”?").arg(name))
+               != QMessageBox::Yes)
+        return;
+    QString error;
+    if (!m_library->remove(m_type, name, &error))
+        QMessageBox::warning(this, tr("Delete EQ Preset"), error);
+}
+
+void EqualizerPanel::importPreset()
+{
+    const QString path = QFileDialog::getOpenFileName(this, tr("Import EQ Preset"), exportDirectory(),
+                                                      tr("EQ presets (*.json)"));
     if (path.isEmpty())
         return;
-    settings.setValue(dirKey, QFileInfo(path).absolutePath());
-
-    QFile file(path);
-    if (!file.open(QIODevice::ReadOnly)) {
-        QMessageBox::warning(this, tr("Load EQ Preset"), tr("Could not read %1:\n%2").arg(path, file.errorString()));
+    QSettings().setValue(kExportDirKey, QFileInfo(path).absolutePath());
+    QString error;
+    const auto name = m_library->importFile(m_type, path, &error);
+    if (!name) {
+        QMessageBox::warning(this, tr("Import EQ Preset"), error);
         return;
     }
-    QJsonParseError error;
-    const QJsonObject preset = QJsonDocument::fromJson(file.readAll(), &error).object();
-    const QJsonArray levelsDb = preset.value(QStringLiteral("levels_db")).toArray();
-    if (error.error != QJsonParseError::NoError || preset.value(QStringLiteral("format")).toString() != QLatin1String(kPresetFormat)
-        || levelsDb.size() != kEqBandCount) {
-        QMessageBox::warning(this, tr("Load EQ Preset"), tr("%1 is not a 590Ctrl EQ preset.").arg(path));
-        return;
-    }
+    selectPreset(*name);
+}
 
-    EqLevels levels;
-    for (int band = 0; band < kEqBandCount; ++band)
-        levels[band] = eqDbToRaw(levelsDb[band].toInt());
-    showLevels(levels, true);
-    emit levelsEdited(currentLevels());
+void EqualizerPanel::exportPreset()
+{
+    const QString name = selectedPreset();
+    if (name.isEmpty())
+        return;
+    const QString path = QFileDialog::getSaveFileName(this, tr("Export EQ Preset"),
+                                                      exportDirectory() + QLatin1Char('/') + name + QStringLiteral(".json"),
+                                                      tr("EQ presets (*.json)"));
+    if (path.isEmpty())
+        return;
+    QSettings().setValue(kExportDirKey, QFileInfo(path).absolutePath());
+    QString error;
+    if (!m_library->exportFile(m_type, name, path, &error))
+        QMessageBox::warning(this, tr("Export EQ Preset"), error);
 }

@@ -72,11 +72,14 @@ void CatLink::send(const QByteArray &command, const QByteArray &coalesceKey)
 
 void CatLink::query(const QByteArray &command, const QByteArray &replyPrefix)
 {
-    const bool queued = std::any_of(m_queue.begin(), m_queue.end(), [&](const Pending &p) {
-        return !p.replyPrefix.isEmpty() && p.command == command;
-    });
-    if (queued)
-        return;
+    // Collapse into an identical queued query, but only if no set is queued
+    // after it: a read requested after a write must observe that write.
+    for (auto it = m_queue.rbegin(); it != m_queue.rend(); ++it) {
+        if (it->replyPrefix.isEmpty())
+            break;
+        if (it->command == command)
+            return;
+    }
     QByteArray prefix = replyPrefix.isEmpty() ? command.chopped(1) : replyPrefix;
     m_queue.push_back({command, prefix, command});
     pump();

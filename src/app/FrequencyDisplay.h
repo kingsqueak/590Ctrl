@@ -49,6 +49,7 @@ private:
     QString m_label;
     qint64 m_hz = 0;
     int m_hoverPlace = -1;
+    int m_wheelRemainder = 0;   // partial trackpad / hi-res wheel delta
     QTimer m_holdTimer;
     std::optional<qint64> m_heldUpdate;
     QLineEdit *m_editor = nullptr;

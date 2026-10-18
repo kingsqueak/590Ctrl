@@ -1,6 +1,8 @@
 #pragma once
 
 #include "CatCodec.h"
+#include "EqAutoLoader.h"
+#include "EqPresetLibrary.h"
 #include "Radio.h"
 
 #include <QMainWindow>
@@ -44,6 +46,8 @@ private:
     void showMessage(const QString &text);
 
     ts590::Radio m_radio;
+    ts590::EqPresetLibrary m_eqPresets;
+    ts590::EqAutoLoader m_eqAutoLoader;
     bool m_applyingRadioState = false;   // suppresses UI -> radio while mirroring the radio
 
     QComboBox *m_portCombo = nullptr;

@@ -23,6 +23,7 @@
 #include <QRadioButton>
 #include <QSettings>
 #include <QSlider>
+#include <QStandardPaths>
 #include <QStatusBar>
 #include <QTabWidget>
 #include <QToolBar>
@@ -45,6 +46,8 @@ const QList<Mode> kModes = {Mode::LSB, Mode::USB, Mode::CW, Mode::CWR,
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
+    , m_eqPresets(QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + QStringLiteral("/eq-presets"))
+    , m_eqAutoLoader(&m_radio, &m_eqPresets)
 {
     setWindowTitle(QStringLiteral("590Ctrl"));
 
@@ -113,6 +116,10 @@ MainWindow::MainWindow(QWidget *parent)
     connect(&m_radio, &Radio::filterChanged, this, &MainWindow::refreshFilters);
     connect(&m_radio, &Radio::eqCurveChanged, this, &MainWindow::refreshEq);
     connect(&m_radio, &Radio::eqLevelsChanged, this, &MainWindow::refreshEq);
+    connect(&m_eqAutoLoader, &EqAutoLoader::applied, this, [this](EqType type, EqMode mode, const QString &preset) {
+        showMessage(tr("Loaded %1 preset “%2” into U for %3")
+                        .arg(type == EqType::Rx ? tr("RX") : tr("TX"), preset, eqModeName(mode)));
+    });
 
     // ---- UI -> radio
     connect(m_vfoA, &FrequencyDisplay::frequencyRequested, this,
@@ -319,8 +326,8 @@ QWidget *MainWindow::createReceivePage()
 
 QWidget *MainWindow::createEqualizerPage()
 {
-    m_rxEq = new EqualizerPanel(EqType::Rx);
-    m_txEq = new EqualizerPanel(EqType::Tx);
+    m_rxEq = new EqualizerPanel(EqType::Rx, &m_eqPresets);
+    m_txEq = new EqualizerPanel(EqType::Tx, &m_eqPresets);
     auto *page = new QWidget;
     auto *layout = new QVBoxLayout(page);
     layout->addWidget(m_rxEq);

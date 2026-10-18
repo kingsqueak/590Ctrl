@@ -68,6 +68,20 @@ private slots:
         QCOMPARE(cmd::notchPosition(500), QByteArray("BP127;"));
     }
 
+    void encodesNoiseBlankerAndReduction()
+    {
+        QCOMPARE(cmd::noiseBlanker(NoiseBlanker::Both), QByteArray("NB3;"));
+        QCOMPARE(cmd::nbLevel(7), QByteArray("NL007;"));
+        QCOMPARE(cmd::nbLevel(0), QByteArray("NL001;"));
+        QCOMPARE(cmd::noiseReduction(NoiseReduction::NR2), QByteArray("NR2;"));
+        QCOMPARE(cmd::nrLevel(NoiseReduction::NR1, 0), QByteArray("RL01;"));
+        QCOMPARE(cmd::nrLevel(NoiseReduction::NR2, 0), QByteArray("RL00;"));
+        QCOMPARE(cmd::nrLevel(NoiseReduction::NR2, 10), QByteArray("RL09;"));
+        QVERIFY(!nbLevelAdjustable(NoiseBlanker::Both));
+        QVERIFY(!noiseBlankerSupported(Mode::FM));
+        QVERIFY(!nr2Supported(Mode::FM));
+    }
+
     void menuNumbersDependOnModel()
     {
         const MenuNumbers sg = menuNumbersFor(kModelTs590SG);

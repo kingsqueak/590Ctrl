@@ -62,6 +62,10 @@ public:
     NotchMode notchMode() const { return m_notchMode; }
     bool notchWide() const { return m_notchWide; }   // manual notch bandwidth
     std::optional<int> notchPosition() const { return m_notchPosition; }
+    NoiseBlanker noiseBlanker() const { return m_noiseBlanker; }
+    std::optional<int> nbLevel() const { return m_nbLevel; }   // of the blanker that's on
+    NoiseReduction noiseReduction() const { return m_noiseReduction; }
+    std::optional<int> nrLevel() const { return m_nrLevel; }   // NR1 level or NR2 speed
 
     FilterSlot filterSlot() const { return m_filterSlot; }
     FilterLayout filterLayout() const;
@@ -94,6 +98,10 @@ public:
     void setTxFilter(TxFilter filter, int index);
     void setNotch(NotchMode mode, bool wide);
     void setNotchPosition(int position);
+    void setNoiseBlanker(NoiseBlanker nb);
+    void setNbLevel(int level);
+    void setNoiseReduction(NoiseReduction nr);
+    void setNrLevel(int level);
     void setFilterSlot(FilterSlot slot);
     void setFilterValue(FilterCommand command, int raw);
     // Selects the curve for the current mode family.
@@ -125,6 +133,8 @@ signals:
     void txFilterChanged(ts590::TxFilter filter);
     void notchChanged();   // mode or bandwidth
     void notchPositionChanged(int position);
+    void noiseBlankerChanged();      // selection or level
+    void noiseReductionChanged();    // selection or level
     void sMeterChanged(int dots);
     void transmitChanged(bool transmitting);
     // Slot, layout or values changed.
@@ -191,6 +201,10 @@ private:
     NotchMode m_notchMode = NotchMode::Off;
     bool m_notchWide = false;
     std::optional<int> m_notchPosition;
+    NoiseBlanker m_noiseBlanker = NoiseBlanker::Off;
+    std::optional<int> m_nbLevel;
+    NoiseReduction m_noiseReduction = NoiseReduction::Off;
+    std::optional<int> m_nrLevel;
 
     FilterSlot m_filterSlot = FilterSlot::A;
     bool m_ssbWidthShift = false;       // EX028

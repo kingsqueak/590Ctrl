@@ -71,6 +71,22 @@ constexpr int kNotchPositionMax = 127;
 // The radio rejects NT/BP in FM (checked on a TS-590SG); CW etc. are fine.
 bool notchSupported(Mode mode);
 
+// Noise blanker (NB) and its level (NL, 1..10). The level applies to whichever
+// single blanker is on; the radio rejects NL when NB is off or both are on.
+enum class NoiseBlanker : int { Off = 0, NB1 = 1, NB2 = 2, Both = 3 };
+constexpr int kNbLevelMin = 1;
+constexpr int kNbLevelMax = 10;
+bool noiseBlankerSupported(Mode mode);   // not in FM
+bool nbLevelAdjustable(NoiseBlanker nb);
+QString noiseBlankerName(NoiseBlanker nb);
+
+// Noise reduction (NR) and its level (RL). NR1: strength 1..10.
+// NR2: SPAC follow speed 0..9 = 2..20 ms. RL is rejected while NR is off.
+enum class NoiseReduction : int { Off = 0, NR1 = 1, NR2 = 2 };
+bool nr2Supported(Mode mode);            // not in FM
+std::pair<int, int> nrLevelRange(NoiseReduction nr);
+QString noiseReductionName(NoiseReduction nr);
+
 // Transmit audio filters, set through EX menus as an index into a table.
 enum class TxFilter : int { SsbLowCut = 0, SsbHighCut = 1, SsbDataLowCut = 2, SsbDataHighCut = 3 };
 constexpr int kTxFilterCount = 4;
@@ -166,6 +182,10 @@ QByteArray ritXitOffset(int hz);
 QByteArray txPower(int watts);                   // PC
 QByteArray tunePower(int watts);                 // TP (TS-590SG only)
 QByteArray notch(NotchMode mode, bool wide);     // NT; `wide` only counts in Manual
+QByteArray noiseBlanker(NoiseBlanker nb);        // NB
+QByteArray nbLevel(int level);                   // NL
+QByteArray noiseReduction(NoiseReduction nr);    // NR
+QByteArray nrLevel(NoiseReduction nr, int level);   // RL, clamped for nr
 QByteArray notchPosition(int position);          // BP, 0..127
 QByteArray mode(Mode mode);                      // MD
 QByteArray dataMode(bool on);                    // DA

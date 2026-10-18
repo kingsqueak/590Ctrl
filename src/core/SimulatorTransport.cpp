@@ -137,6 +137,14 @@ QByteArray SimulatorTransport::answerFor(QByteArrayView name) const
         return "NT" + QByteArray::number(m_notchMode) + (m_notchWide ? '1' : '0');
     if (name == "BP")
         return "BP" + digits(m_notchPosition, 3);
+    if (name == "NB")
+        return "NB" + QByteArray::number(m_noiseBlanker);
+    if (name == "NL")   // only while exactly one blanker is on
+        return m_noiseBlanker == 1 || m_noiseBlanker == 2 ? "NL" + digits(m_nbLevels[m_noiseBlanker], 3) : QByteArray();
+    if (name == "NR")
+        return "NR" + QByteArray::number(m_noiseReduction);
+    if (name == "RL")
+        return m_noiseReduction != 0 ? "RL" + digits(m_nrLevels[m_noiseReduction], 2) : QByteArray();
     if (name == "PC")
         return "PC" + digits(m_txPower, 3);
     if (name == "TP")
@@ -235,6 +243,30 @@ void SimulatorTransport::handle(const QByteArray &command)
             return reply("?");
         m_ritXitOffset = std::clamp(m_ritXitOffset + (name == "RU" ? *hz : -*hz), -kRitXitMaxHz, kRitXitMaxHz);
         return echo(answerFor("IF"));   // AI reports offset changes via IF
+    }
+    if (name == "NB" || name == "NR") {
+        const auto value = args.size() == 1 ? number(args) : std::nullopt;
+        const int maximum = name == "NB" ? 3 : 2;
+        if (!value || *value > maximum)
+            return reply("?");
+        // NB is unavailable in FM, as is NR2.
+        if (m_mode == Mode::FM && *value != 0 && (name == "NB" || *value == 2))
+            return reply("?");
+        (name == "NB" ? m_noiseBlanker : m_noiseReduction) = *value;
+        return echo(answerFor(name));
+    }
+    if (name == "NL" || name == "RL") {
+        const auto value = number(args);
+        const bool on = name == "NL" ? (m_noiseBlanker == 1 || m_noiseBlanker == 2) : m_noiseReduction != 0;
+        if (!value || !on)
+            return reply("?");
+        if (name == "NL") {
+            m_nbLevels[m_noiseBlanker] = std::clamp(*value, kNbLevelMin, kNbLevelMax);
+        } else {
+            const auto [low, high] = nrLevelRange(NoiseReduction(m_noiseReduction));
+            m_nrLevels[m_noiseReduction] = std::clamp(*value, low, high);
+        }
+        return echo(answerFor(name));
     }
     if ((name == "NT" || name == "BP") && !notchSupported(m_mode))
         return reply("?");

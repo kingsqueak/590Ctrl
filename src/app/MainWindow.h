@@ -51,6 +51,7 @@ private:
     void refreshFilters();
     void refreshRitXit();
     void refreshNotch();
+    void refreshNoise();
     void refreshEq(ts590::EqType type);
     void showMessage(const QString &text);
 
@@ -79,6 +80,11 @@ private:
     QSlider *m_rfSlider = nullptr;
     QSlider *m_usbInSlider = nullptr;
     QSlider *m_usbOutSlider = nullptr;
+    QPushButton *m_nbButton = nullptr;
+    QSlider *m_nbSlider = nullptr;
+    QPushButton *m_nrButton = nullptr;
+    QSlider *m_nrSlider = nullptr;
+    QLabel *m_nrValue = nullptr;
 
     QPushButton *m_ritButton = nullptr;
     QPushButton *m_xitButton = nullptr;

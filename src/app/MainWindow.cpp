@@ -67,6 +67,13 @@ private:
     int m_wheelRemainder = 0;
 };
 
+// RL carries 0..9 for NR2, meaning a 2..20 ms SPAC follow speed.
+QString nrLevelText(NoiseReduction nr, int level)
+{
+    return nr == NoiseReduction::NR2 ? QCoreApplication::translate("MainWindow", "%1 ms").arg((level + 1) * 2)
+                                     : QString::number(level);
+}
+
 // Mode buttons in front-panel order.
 const QList<Mode> kModes = {Mode::LSB, Mode::USB, Mode::CW, Mode::CWR,
                             Mode::FSK, Mode::FSKR, Mode::FM, Mode::AM};
@@ -150,6 +157,8 @@ MainWindow::MainWindow(QWidget *parent)
     connect(&m_radio, &Radio::tunePowerChanged, this, follow(m_tunePowerSlider));
     connect(&m_radio, &Radio::ritXitChanged, this, &MainWindow::refreshRitXit);
     connect(&m_radio, &Radio::notchChanged, this, &MainWindow::refreshNotch);
+    connect(&m_radio, &Radio::noiseBlankerChanged, this, &MainWindow::refreshNoise);
+    connect(&m_radio, &Radio::noiseReductionChanged, this, &MainWindow::refreshNoise);
     connect(&m_radio, &Radio::notchPositionChanged, this, follow(m_notchSlider));
     connect(&m_radio, &Radio::txFilterChanged, this, [this](TxFilter filter) {
         QComboBox *combo = m_txFilterCombos[int(filter)];
@@ -374,6 +383,59 @@ QWidget *MainWindow::createOperatePage()
     addLevel(tr("RF gain"), m_rfSlider);
     addLevel(tr("USB in"), m_usbInSlider);
     addLevel(tr("USB out"), m_usbOutSlider);
+
+    // NB / NR: the button steps through the variants like the front-panel
+    // key; the slider sets the level of whichever variant is on.
+    auto createNoiseRow = [this, levelsLayout](QPushButton *&button, QSlider *&slider, QLabel *value) {
+        button = new QPushButton;
+        button->setCheckable(true);
+        button->setMinimumWidth(button->fontMetrics().horizontalAdvance(QStringLiteral("NB1+2")) + 24);
+        slider = new QSlider(Qt::Horizontal);
+        slider->setPageStep(1);
+        slider->setTickPosition(QSlider::TicksBelow);
+        slider->setTickInterval(1);
+        value->setMinimumWidth(value->fontMetrics().horizontalAdvance(QStringLiteral("20 ms")) + 4);
+        value->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        auto *row = new QHBoxLayout;
+        row->addWidget(slider, 1);
+        row->addWidget(value);
+        levelsLayout->addRow(button, row);
+    };
+    auto *nbValue = new QLabel;
+    createNoiseRow(m_nbButton, m_nbSlider, nbValue);
+    m_nbButton->setToolTip(tr("Noise blanker: OFF → NB1 → NB2 → NB1+NB2"));
+    m_nbSlider->setRange(kNbLevelMin, kNbLevelMax);
+    m_nbSlider->setToolTip(tr("Level of the active noise blanker (not adjustable with both on)"));
+    connect(m_nbSlider, &QSlider::valueChanged, nbValue, qOverload<int>(&QLabel::setNum));
+    connect(m_nbSlider, &QSlider::valueChanged, this, [this](int level) {
+        if (!m_applyingRadioState)
+            m_radio.setNbLevel(level);
+    });
+    connect(m_nbButton, &QPushButton::clicked, this, [this] {
+        static constexpr NoiseBlanker next[] = {NoiseBlanker::NB1, NoiseBlanker::NB2, NoiseBlanker::Both,
+                                                NoiseBlanker::Off};
+        m_radio.setNoiseBlanker(next[int(m_radio.noiseBlanker())]);
+        refreshNoise();   // undo the button's own toggle until the radio answers
+    });
+
+    m_nrValue = new QLabel;
+    createNoiseRow(m_nrButton, m_nrSlider, m_nrValue);
+    m_nrButton->setToolTip(tr("Noise reduction: OFF → NR1 → NR2 (NR2 not in FM)"));
+    m_nrSlider->setToolTip(tr("NR1: reduction level. NR2: SPAC follow speed."));
+    connect(m_nrSlider, &QSlider::valueChanged, this, [this](int level) {
+        m_nrValue->setText(nrLevelText(m_radio.noiseReduction(), level));
+        if (!m_applyingRadioState)
+            m_radio.setNrLevel(level);
+    });
+    connect(m_nrButton, &QPushButton::clicked, this, [this] {
+        NoiseReduction next = NoiseReduction::Off;
+        if (m_radio.noiseReduction() == NoiseReduction::Off)
+            next = NoiseReduction::NR1;
+        else if (m_radio.noiseReduction() == NoiseReduction::NR1 && nr2Supported(m_radio.mode()))
+            next = NoiseReduction::NR2;
+        m_radio.setNoiseReduction(next);
+        refreshNoise();
+    });
 
     m_filterA = new QRadioButton(tr("Filter A"));
     m_filterB = new QRadioButton(tr("Filter B"));
@@ -645,6 +707,7 @@ void MainWindow::onStateChanged(Radio::State state)
         onVfoSelectionChanged(Vfo::A, Vfo::A);
         refreshRitXit();
         refreshNotch();
+        refreshNoise();
         break;
     case Radio::State::Connecting: m_radioInfo->setText(tr("Connecting…")); break;
     case Radio::State::Connected:
@@ -652,6 +715,7 @@ void MainWindow::onStateChanged(Radio::State state)
         onVfoSelectionChanged(m_radio.rxVfo(), m_radio.txVfo());
         refreshRitXit();
         refreshNotch();
+        refreshNoise();
         break;
     }
 }
@@ -681,6 +745,7 @@ void MainWindow::onModeChanged(Mode mode, bool data)
     m_rxEq->setEqMode(m_radio.eqMode());
     m_txEq->setEqMode(m_radio.eqMode());
     refreshNotch();
+    refreshNoise();
 }
 
 void MainWindow::onVfoSelectionChanged(Vfo rx, Vfo tx)
@@ -781,6 +846,35 @@ void MainWindow::refreshNotch()
     if (manual)
         m_notchWideCheck->setChecked(m_radio.notchWide());
     m_notchSlider->setEnabled(manual);
+}
+
+void MainWindow::refreshNoise()
+{
+    const bool connected = m_radio.state() == Radio::State::Connected;
+    const Mode mode = m_radio.mode();
+    m_applyingRadioState = true;
+
+    const NoiseBlanker nb = connected ? m_radio.noiseBlanker() : NoiseBlanker::Off;
+    m_nbButton->setText(noiseBlankerName(nb));
+    m_nbButton->setChecked(nb != NoiseBlanker::Off);
+    m_nbButton->setEnabled(connected && noiseBlankerSupported(mode));
+    m_nbSlider->setEnabled(connected && noiseBlankerSupported(mode) && nbLevelAdjustable(nb));
+    if (const auto level = m_radio.nbLevel(); level && !m_nbSlider->isSliderDown())
+        m_nbSlider->setValue(*level);
+
+    const NoiseReduction nr = connected ? m_radio.noiseReduction() : NoiseReduction::Off;
+    m_nrButton->setText(noiseReductionName(nr));
+    m_nrButton->setChecked(nr != NoiseReduction::Off);
+    m_nrButton->setEnabled(connected);
+    m_nrSlider->setEnabled(connected && nr != NoiseReduction::Off);
+    const auto [low, high] = nrLevelRange(nr);
+    m_nrSlider->setRange(low, high);
+    if (const auto level = m_radio.nrLevel(); level && !m_nrSlider->isSliderDown())
+        m_nrSlider->setValue(*level);
+    // The unit depends on NR1 vs NR2, so refresh even if the value didn't move.
+    m_nrValue->setText(nr == NoiseReduction::Off ? QString() : nrLevelText(nr, m_nrSlider->value()));
+
+    m_applyingRadioState = false;
 }
 
 void MainWindow::showMessage(const QString &text)

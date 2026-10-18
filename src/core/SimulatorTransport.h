@@ -41,6 +41,10 @@ public:
     int notchMode() const { return m_notchMode; }
     bool notchWide() const { return m_notchWide; }
     int notchPosition() const { return m_notchPosition; }
+    int noiseBlanker() const { return m_noiseBlanker; }
+    int nbLevel(int blanker) const { return m_nbLevels[blanker]; }
+    int noiseReduction() const { return m_noiseReduction; }
+    int nrLevel(int reduction) const { return m_nrLevels[reduction]; }
     void setUnresponsive(bool on) { m_unresponsive = on; }
 
 private:
@@ -81,6 +85,10 @@ private:
     int m_notchMode = 0;
     bool m_notchWide = false;
     int m_notchPosition = 64;
+    int m_noiseBlanker = 0;
+    int m_nbLevels[3] = {0, 3, 6};   // per blanker: [1] NB1, [2] NB2
+    int m_noiseReduction = 0;
+    int m_nrLevels[3] = {0, 5, 2};   // [1] NR1 level, [2] NR2 speed
     QHash<int, int> m_menus;
     EqCurve m_eqCurves[2][8] = {};
     EqLevels m_eqLevels[2];

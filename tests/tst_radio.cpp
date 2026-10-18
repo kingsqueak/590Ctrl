@@ -208,6 +208,50 @@ private slots:
         QCOMPARE(messages.size(), 0);
     }
 
+    void noiseBlankerLevels()
+    {
+        Radio radio;
+        SimulatorTransport *sim = connectSim(radio);
+        QCOMPARE(radio.noiseBlanker(), NoiseBlanker::Off);
+        QVERIFY(!radio.nbLevel());
+
+        radio.setNoiseBlanker(NoiseBlanker::NB2);
+        QTRY_COMPARE(radio.nbLevel(), std::optional(6));   // NB2's own level
+        radio.setNbLevel(9);
+        QTRY_COMPARE(sim->nbLevel(2), 9);
+
+        radio.setNoiseBlanker(NoiseBlanker::NB1);
+        QTRY_COMPARE(radio.nbLevel(), std::optional(3));
+        QCOMPARE(sim->nbLevel(2), 9);
+
+        radio.setNoiseBlanker(NoiseBlanker::Both);
+        QTRY_COMPARE(radio.noiseBlanker(), NoiseBlanker::Both);
+        QVERIFY(!radio.nbLevel());
+        QTRY_COMPARE(radio.link()->pendingCount(), 0);
+        radio.setNbLevel(4);   // not adjustable with both on: not sent
+        QCOMPARE(radio.link()->pendingCount(), 0);
+    }
+
+    void noiseReductionLevels()
+    {
+        Radio radio;
+        SimulatorTransport *sim = connectSim(radio);
+        radio.setNoiseReduction(NoiseReduction::NR1);
+        QTRY_COMPARE(radio.nrLevel(), std::optional(5));
+        radio.setNrLevel(8);
+        QTRY_COMPARE(sim->nrLevel(1), 8);
+
+        radio.setNoiseReduction(NoiseReduction::NR2);
+        QTRY_COMPARE(radio.nrLevel(), std::optional(2));
+        radio.setNrLevel(0);
+        QTRY_COMPARE(sim->nrLevel(2), 0);
+
+        radio.setNoiseReduction(NoiseReduction::Off);
+        QTRY_COMPARE(radio.noiseReduction(), NoiseReduction::Off);
+        QVERIFY(!radio.nrLevel());
+        QCOMPARE(sim->noiseReduction(), 0);
+    }
+
     void modeChangeRefreshesFilterLayout()
     {
         Radio radio;

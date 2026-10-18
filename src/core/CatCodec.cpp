@@ -94,6 +94,47 @@ const QList<int> &txFilterValuesHz(TxFilter filter)
     return filter == TxFilter::SsbLowCut || filter == TxFilter::SsbDataLowCut ? lowCut : highCut;
 }
 
+bool noiseBlankerSupported(Mode mode)
+{
+    return mode != Mode::FM;
+}
+
+bool nbLevelAdjustable(NoiseBlanker nb)
+{
+    return nb == NoiseBlanker::NB1 || nb == NoiseBlanker::NB2;
+}
+
+QString noiseBlankerName(NoiseBlanker nb)
+{
+    switch (nb) {
+    case NoiseBlanker::NB1: return QStringLiteral("NB1");
+    case NoiseBlanker::NB2: return QStringLiteral("NB2");
+    case NoiseBlanker::Both: return QStringLiteral("NB1+2");
+    case NoiseBlanker::Off: break;
+    }
+    return QStringLiteral("NB");
+}
+
+bool nr2Supported(Mode mode)
+{
+    return mode != Mode::FM;
+}
+
+std::pair<int, int> nrLevelRange(NoiseReduction nr)
+{
+    return nr == NoiseReduction::NR2 ? std::pair{0, 9} : std::pair{1, 10};
+}
+
+QString noiseReductionName(NoiseReduction nr)
+{
+    switch (nr) {
+    case NoiseReduction::NR1: return QStringLiteral("NR1");
+    case NoiseReduction::NR2: return QStringLiteral("NR2");
+    case NoiseReduction::Off: break;
+    }
+    return QStringLiteral("NR");
+}
+
 bool notchSupported(Mode mode)
 {
     return mode != Mode::FM;
@@ -262,6 +303,18 @@ QByteArray txPower(int watts) { return "PC" + digits(std::clamp(watts, kTxPowerM
 QByteArray notch(NotchMode mode, bool wide)
 {
     return "NT" + QByteArray::number(int(mode)) + (mode == NotchMode::Manual && wide ? "1;" : "0;");
+}
+
+QByteArray noiseBlanker(NoiseBlanker nb) { return "NB" + QByteArray::number(int(nb)) + ';'; }
+
+QByteArray nbLevel(int level) { return "NL" + digits(std::clamp(level, kNbLevelMin, kNbLevelMax), 3) + ';'; }
+
+QByteArray noiseReduction(NoiseReduction nr) { return "NR" + QByteArray::number(int(nr)) + ';'; }
+
+QByteArray nrLevel(NoiseReduction nr, int level)
+{
+    const auto [low, high] = nrLevelRange(nr);
+    return "RL" + digits(std::clamp(level, low, high), 2) + ';';
 }
 
 QByteArray notchPosition(int position) { return "BP" + digits(std::clamp(position, 0, kNotchPositionMax), 3) + ';'; }

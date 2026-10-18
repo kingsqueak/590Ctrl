@@ -95,6 +95,10 @@ void Radio::teardown()
     m_notchMode = NotchMode::Off;
     m_notchWide = false;
     m_notchPosition.reset();
+    m_noiseBlanker = NoiseBlanker::Off;
+    m_nbLevel.reset();
+    m_noiseReduction = NoiseReduction::Off;
+    m_nrLevel.reset();
     for (auto &perType : m_eqCurves) {
         for (auto &curve : perType)
             curve.reset();
@@ -139,7 +143,7 @@ void Radio::requestFullState()
     }
     for (int menu : menus.txFilter)
         m_link.query(cmd::readMenu(menu));
-    for (const char *read : {"FA;", "FB;", "FR;", "FT;", "IF;", "RT;", "XT;", "DA;", "AG0;", "SQ0;", "RG;", "PC;", "NT;", "BP;"})
+    for (const char *read : {"FA;", "FB;", "FR;", "FT;", "IF;", "RT;", "XT;", "DA;", "AG0;", "SQ0;", "RG;", "PC;", "NT;", "BP;", "NB;", "NR;"})
         m_link.query(read);
     if (m_modelId == kModelTs590SG)
         m_link.query("TP;");
@@ -266,6 +270,41 @@ void Radio::handleFrame(const QByteArray &frame)
             m_notchMode = mode;
             m_notchWide = wide;
             emit notchChanged();
+        }
+    } else if (name == "NB" && frame.size() == 3) {
+        const int value = frame[2] - '0';
+        if (value < 0 || value > 3)
+            return;
+        if (NoiseBlanker(value) != m_noiseBlanker) {
+            m_noiseBlanker = NoiseBlanker(value);
+            // NB1 and NB2 keep separate levels; fetch the one now in use.
+            m_nbLevel.reset();
+            if (nbLevelAdjustable(m_noiseBlanker))
+                m_link.query("NL;");
+            emit noiseBlankerChanged();
+        }
+    } else if (name == "NL" && frame.size() == 5) {
+        const auto level = numberAt(frame, 2);
+        if (level && m_nbLevel != *level) {
+            m_nbLevel = *level;
+            emit noiseBlankerChanged();
+        }
+    } else if (name == "NR" && frame.size() == 3) {
+        const int value = frame[2] - '0';
+        if (value < 0 || value > 2)
+            return;
+        if (NoiseReduction(value) != m_noiseReduction) {
+            m_noiseReduction = NoiseReduction(value);
+            m_nrLevel.reset();
+            if (m_noiseReduction != NoiseReduction::Off)
+                m_link.query("RL;");
+            emit noiseReductionChanged();
+        }
+    } else if (name == "RL" && frame.size() == 4) {
+        const auto level = numberAt(frame, 2);
+        if (level && m_nrLevel != *level) {
+            m_nrLevel = *level;
+            emit noiseReductionChanged();
         }
     } else if (name == "BP" && frame.size() == 5) {
         const auto position = numberAt(frame, 2);
@@ -558,6 +597,41 @@ void Radio::setNotchPosition(int position)
     m_notchPosition = std::clamp(position, 0, kNotchPositionMax);
     m_link.send(cmd::notchPosition(*m_notchPosition), "BP");
     m_link.query("BP;");
+}
+
+void Radio::setNoiseBlanker(NoiseBlanker nb)
+{
+    if (nb != NoiseBlanker::Off && !noiseBlankerSupported(m_mode))
+        return;
+    m_link.send(cmd::noiseBlanker(nb), "NB");
+    m_link.query("NB;");
+}
+
+void Radio::setNbLevel(int level)
+{
+    if (!nbLevelAdjustable(m_noiseBlanker))
+        return;
+    m_nbLevel = std::clamp(level, kNbLevelMin, kNbLevelMax);
+    m_link.send(cmd::nbLevel(*m_nbLevel), "NL");
+    m_link.query("NL;");
+}
+
+void Radio::setNoiseReduction(NoiseReduction nr)
+{
+    if (nr == NoiseReduction::NR2 && !nr2Supported(m_mode))
+        return;
+    m_link.send(cmd::noiseReduction(nr), "NR");
+    m_link.query("NR;");
+}
+
+void Radio::setNrLevel(int level)
+{
+    if (m_noiseReduction == NoiseReduction::Off)
+        return;
+    const auto [low, high] = nrLevelRange(m_noiseReduction);
+    m_nrLevel = std::clamp(level, low, high);
+    m_link.send(cmd::nrLevel(m_noiseReduction, *m_nrLevel), "RL");
+    m_link.query("RL;");
 }
 
 void Radio::setMode(Mode mode)

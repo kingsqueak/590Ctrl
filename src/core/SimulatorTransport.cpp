@@ -29,6 +29,9 @@ SimulatorTransport::SimulatorTransport(QObject *parent)
     m_eqLevels[int(EqType::Tx)] = flatEqLevels();
     m_eqCurves[int(EqType::Rx)][int(EqMode::SsbData)] = EqCurve::User;
     m_eqCurves[int(EqType::Tx)][int(EqMode::SsbData)] = EqCurve::User;
+    const MenuNumbers menus = menuNumbersFor(kModelTs590SG);
+    m_menus[menus.usbAudioIn] = 4;
+    m_menus[menus.usbAudioOut] = 5;
 }
 
 bool SimulatorTransport::open()
@@ -164,6 +167,15 @@ void SimulatorTransport::handle(const QByteArray &command)
         if (name == "FR")
             m_txVfo = vfo;
         return echo(name.toByteArray() + QByteArray::number(vfo));
+    }
+    if (name == "VV" && isRead) {
+        // Copies the receive VFO onto the other one.
+        if (m_rxVfo == 1)
+            m_freqA = m_freqB;
+        else
+            m_freqB = m_freqA;
+        echo(answerFor("FA"));
+        return echo(answerFor("FB"));
     }
     if (name == "IF" && isRead) {
         const qint64 freq = m_rxVfo == 1 ? m_freqB : m_freqA;

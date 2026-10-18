@@ -21,6 +21,8 @@ public:
     qint64 frequency() const { return m_hz; }
     void setFrequency(qint64 hz);   // from the radio
     void setLabel(const QString &label);
+    // Small tag under the label, e.g. "RX", "TX", "RX/TX".
+    void setRole(const QString &role);
 
     QSize sizeHint() const override;
     QSize minimumSizeHint() const override { return sizeHint(); }
@@ -47,6 +49,7 @@ private:
 
     QFont m_font;
     QString m_label;
+    QString m_role;
     qint64 m_hz = 0;
     int m_hoverPlace = -1;
     int m_wheelRemainder = 0;   // partial trackpad / hi-res wheel delta

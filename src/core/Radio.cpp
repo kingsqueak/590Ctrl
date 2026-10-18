@@ -81,6 +81,8 @@ void Radio::teardown()
     m_data = false;
     m_transmitting = false;
     m_sh = m_sl = m_fw = m_is = std::nullopt;
+    m_usbAudioIn.reset();
+    m_usbAudioOut.reset();
     for (auto &perType : m_eqCurves) {
         for (auto &curve : perType)
             curve.reset();
@@ -116,9 +118,12 @@ void Radio::requestFullState()
     m_link.query("FV;");
     m_link.query("AI;");
     m_link.send(cmd::autoInfo(kAutoInfoLevel));
+    const MenuNumbers menus = menuNumbersFor(m_modelId);
     // Filter knob meaning depends on these, so read them before the mode.
-    m_link.query(cmd::readMenu(28));
-    m_link.query(cmd::readMenu(29));
+    for (int menu : {menus.ssbFilterMode, menus.ssbDataFilterMode, menus.usbAudioIn, menus.usbAudioOut}) {
+        if (menu >= 0)
+            m_link.query(cmd::readMenu(menu));
+    }
     for (const char *read : {"FA;", "FB;", "FR;", "FT;", "IF;", "DA;", "AG0;", "SQ0;", "RG;"})
         m_link.query(read);
     // MD's answer sets the mode, which pulls everything mode-dependent.
@@ -176,6 +181,9 @@ void Radio::handleFrame(const QByteArray &frame)
             emit message(tr("This is a TS-590S. 590Ctrl targets the TS-590SG; some filter tables differ."));
         else if (m_modelId != kModelTs590SG)
             emit message(tr("Unexpected radio ID %1; continuing anyway.").arg(m_modelId));
+        // The S has no menu for it: SSB is HI/LO, SSB-DATA is WIDTH/SHIFT.
+        m_ssbWidthShift = false;
+        m_ssbDataWidthShift = m_modelId == kModelTs590S;
         setState(State::Connected);
         requestFullState();
         m_meterTimer.start();
@@ -250,15 +258,29 @@ void Radio::handleFrame(const QByteArray &frame)
         }
     } else if (name == "EX") {
         const auto menu = parseMenu(frame);
-        if (!menu || (menu->number != 28 && menu->number != 29))
+        const auto value = menu ? parseNumber(menu->value) : std::nullopt;
+        if (!value)
             return;
-        // P5 = 0: "1 (HI/LO)", P5 = 1: "2 (WIDTH/SHIFT)".
-        const bool widthShift = menu->value == "1";
-        bool &field = menu->number == 28 ? m_ssbWidthShift : m_ssbDataWidthShift;
-        if (field != widthShift) {
-            field = widthShift;
-            emit filterChanged();
-            requestFilterValues();
+        const MenuNumbers menus = menuNumbersFor(m_modelId);
+        if (menu->number == menus.usbAudioIn || menu->number == menus.usbAudioOut) {
+            const bool in = menu->number == menus.usbAudioIn;
+            std::optional<int> &field = in ? m_usbAudioIn : m_usbAudioOut;
+            if (field != int(*value)) {
+                field = int(*value);
+                if (in)
+                    emit usbAudioInChanged(*field);
+                else
+                    emit usbAudioOutChanged(*field);
+            }
+        } else if (menu->number == menus.ssbFilterMode || menu->number == menus.ssbDataFilterMode) {
+            // P5 = 0: "1 (HI/LO)", P5 = 1: "2 (WIDTH/SHIFT)".
+            const bool widthShift = *value == 1;
+            bool &field = menu->number == menus.ssbFilterMode ? m_ssbWidthShift : m_ssbDataWidthShift;
+            if (field != widthShift) {
+                field = widthShift;
+                emit filterChanged();
+                requestFilterValues();
+            }
         }
     } else if (name == "EQ") {
         if (const auto answer = parseEqCurve(frame)) {
@@ -347,6 +369,65 @@ void Radio::setFrequency(Vfo vfo, qint64 hz)
     hz = std::clamp(hz, kMinFrequencyHz, kMaxFrequencyHz);
     (vfo == Vfo::B ? m_freqB : m_freqA) = hz;
     m_link.send(cmd::frequency(vfo, hz), vfo == Vfo::B ? "FB" : "FA");
+}
+
+void Radio::requestVfoState()
+{
+    m_link.query("FR;");
+    m_link.query("FT;");
+    // The VFOs keep their own mode; pick up whatever the new one uses.
+    m_link.query("MD;");
+    m_link.query("DA;");
+}
+
+void Radio::selectVfo(Vfo vfo)
+{
+    if (vfo == Vfo::Memory)
+        return;
+    m_link.send(cmd::rxVfo(vfo), "FR");
+    requestVfoState();
+}
+
+void Radio::setSplit(bool on)
+{
+    if (m_rxVfo == Vfo::Memory)
+        return;
+    if (on)
+        m_link.send(cmd::txVfo(m_rxVfo == Vfo::A ? Vfo::B : Vfo::A), "FT");
+    else
+        m_link.send(cmd::rxVfo(m_rxVfo), "FR");   // FR returns to simplex
+    requestVfoState();
+}
+
+void Radio::copyVfo()
+{
+    m_link.send(cmd::copyVfo());
+    m_link.query("FA;");
+    m_link.query("FB;");
+    m_link.query("MD;");
+    m_link.query("DA;");
+}
+
+void Radio::setMenuLevel(int menu, std::optional<int> &field, int level)
+{
+    if (menu < 0)
+        return;
+    level = std::clamp(level, 0, kUsbAudioLevelMax);
+    field = level;
+    const QByteArray read = cmd::readMenu(menu);
+    m_link.send(cmd::setMenu(menu, QByteArray::number(level)), read.chopped(1));
+    // EX sets don't reliably echo; read back so the UI tracks the radio.
+    m_link.query(read);
+}
+
+void Radio::setUsbAudioIn(int level)
+{
+    setMenuLevel(menuNumbersFor(m_modelId).usbAudioIn, m_usbAudioIn, level);
+}
+
+void Radio::setUsbAudioOut(int level)
+{
+    setMenuLevel(menuNumbersFor(m_modelId).usbAudioOut, m_usbAudioOut, level);
 }
 
 void Radio::setMode(Mode mode)

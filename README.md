@@ -3,7 +3,8 @@
 Control software for the Kenwood TS-590SG over its USB port, for macOS and
 Linux. Qt 6 / C++20.
 
-Current features: VFO A/B tuning, mode and DATA selection, AF/RF gain, squelch,
+Current features: VFO A/B tuning, RX/TX VFO selection, split and A=B, mode and
+DATA selection, AF/RF gain, squelch, USB audio in/out levels (menus 071/072),
 IF filter A/B with the mode-dependent high/low-cut or width/shift controls, an
 S-meter, and an 18-band RX/TX equalizer editor that can program the User (U)
 curve and save/load presets as JSON.

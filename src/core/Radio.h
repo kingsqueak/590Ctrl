@@ -40,6 +40,7 @@ public:
     qint64 frequency(Vfo vfo) const { return vfo == Vfo::B ? m_freqB : m_freqA; }
     Vfo rxVfo() const { return m_rxVfo; }
     Vfo txVfo() const { return m_txVfo; }
+    bool split() const { return m_rxVfo != m_txVfo; }
     Mode mode() const { return m_mode; }
     bool dataMode() const { return m_data; }
     int afGain() const { return m_afGain; }
@@ -47,6 +48,9 @@ public:
     int rfGain() const { return m_rfGain; }
     int sMeter() const { return m_sMeter; }
     bool transmitting() const { return m_transmitting; }
+    // Menu-backed USB audio levels, 0..9; nullopt until read.
+    std::optional<int> usbAudioIn() const { return m_usbAudioIn; }
+    std::optional<int> usbAudioOut() const { return m_usbAudioOut; }
 
     FilterSlot filterSlot() const { return m_filterSlot; }
     FilterLayout filterLayout() const;
@@ -57,11 +61,19 @@ public:
     std::optional<EqLevels> eqLevels(EqType type) const { return m_eqLevels[int(type)]; }
 
     void setFrequency(Vfo vfo, qint64 hz);
+    // Receive (and, simplex, transmit) on `vfo`. Cancels split.
+    void selectVfo(Vfo vfo);
+    // Split: transmit on the VFO not used for receive.
+    void setSplit(bool on);
+    // A=B: copies the receive VFO to the other one.
+    void copyVfo();
     void setMode(Mode mode);
     void setDataMode(bool on);
     void setAfGain(int level);
     void setSquelch(int level);
     void setRfGain(int level);
+    void setUsbAudioIn(int level);
+    void setUsbAudioOut(int level);
     void setFilterSlot(FilterSlot slot);
     void setFilterValue(FilterCommand command, int raw);
     // Selects the curve for the current mode family.
@@ -84,6 +96,8 @@ signals:
     void afGainChanged(int level);
     void squelchChanged(int level);
     void rfGainChanged(int level);
+    void usbAudioInChanged(int level);
+    void usbAudioOutChanged(int level);
     void sMeterChanged(int dots);
     void transmitChanged(bool transmitting);
     // Slot, layout or values changed.
@@ -102,6 +116,8 @@ private:
     void requestModeDependentState();
     void requestFilterValues();
     void applyMode(Mode mode, std::optional<bool> data);
+    void setMenuLevel(int menu, std::optional<int> &field, int level);
+    void requestVfoState();
     void pollMeter();
     void teardown();
 
@@ -135,6 +151,8 @@ private:
     int m_rfGain = 0;
     int m_sMeter = 0;
     bool m_transmitting = false;
+    std::optional<int> m_usbAudioIn;
+    std::optional<int> m_usbAudioOut;
 
     FilterSlot m_filterSlot = FilterSlot::A;
     bool m_ssbWidthShift = false;       // EX028

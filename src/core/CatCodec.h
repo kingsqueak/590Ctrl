@@ -45,6 +45,16 @@ QString modeName(Mode mode);
 std::optional<Mode> modeFromChar(char c);
 bool modeSupportsData(Mode mode);   // DATA is valid in LSB/USB/FM/AM only
 
+// The S and SG number their EX menus differently. -1: menu doesn't exist.
+struct MenuNumbers {
+    int ssbFilterMode = -1;       // SSB HI/LO vs WIDTH/SHIFT
+    int ssbDataFilterMode = -1;   // same for SSB-DATA
+    int usbAudioIn = -1;          // USB audio input level, 0..9
+    int usbAudioOut = -1;         // USB audio output level, 0..9
+};
+MenuNumbers menuNumbersFor(int modelId);
+constexpr int kUsbAudioLevelMax = 9;
+
 // ---------------------------------------------------------------- Equalizer
 
 constexpr int kEqBandCount = 18;   // 0 Hz .. 5100 Hz in 300 Hz steps
@@ -123,6 +133,9 @@ namespace cmd {
 QByteArray read(QByteArrayView name);            // e.g. "FA" -> "FA;"
 QByteArray autoInfo(int level);                  // AI
 QByteArray frequency(Vfo vfo, qint64 hz);        // FA / FB
+QByteArray rxVfo(Vfo vfo);                       // FR: selects RX VFO, simplex
+QByteArray txVfo(Vfo vfo);                       // FT: selects TX VFO, split if != RX
+QByteArray copyVfo();                            // VV: A=B
 QByteArray mode(Mode mode);                      // MD
 QByteArray dataMode(bool on);                    // DA
 QByteArray afGain(int level);                    // AG (0..255)

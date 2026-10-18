@@ -70,6 +70,51 @@ private slots:
         QTRY_COMPARE(sim->frequency(Vfo::A), 7'074'000);
     }
 
+    void selectsVfoAndSplit()
+    {
+        Radio radio;
+        SimulatorTransport *sim = connectSim(radio);
+        QVERIFY(!radio.split());
+
+        radio.selectVfo(Vfo::B);
+        QTRY_COMPARE(radio.rxVfo(), Vfo::B);
+        QTRY_COMPARE(radio.txVfo(), Vfo::B);
+        QCOMPARE(sim->rxVfo(), Vfo::B);
+
+        radio.setSplit(true);
+        QTRY_COMPARE(radio.txVfo(), Vfo::A);
+        QCOMPARE(radio.rxVfo(), Vfo::B);
+        QVERIFY(radio.split());
+        QCOMPARE(sim->txVfo(), Vfo::A);
+
+        radio.setSplit(false);
+        QTRY_VERIFY(!radio.split());
+        QCOMPARE(radio.txVfo(), Vfo::B);
+    }
+
+    void copiesVfo()
+    {
+        Radio radio;
+        SimulatorTransport *sim = connectSim(radio);
+        radio.copyVfo();   // RX on A: A=B copies A onto B
+        QTRY_COMPARE(radio.frequency(Vfo::B), 14'195'000);
+        QCOMPARE(sim->frequency(Vfo::B), 14'195'000);
+    }
+
+    void usbAudioLevels()
+    {
+        Radio radio;
+        SimulatorTransport *sim = connectSim(radio);
+        QCOMPARE(radio.usbAudioIn(), std::optional(4));
+        QCOMPARE(radio.usbAudioOut(), std::optional(5));
+
+        radio.setUsbAudioIn(7);
+        radio.setUsbAudioOut(12);   // clamped to 9
+        QTRY_COMPARE(sim->menu(71), 7);
+        QTRY_COMPARE(sim->menu(72), 9);
+        QCOMPARE(radio.usbAudioOut(), std::optional(9));
+    }
+
     void modeChangeRefreshesFilterLayout()
     {
         Radio radio;

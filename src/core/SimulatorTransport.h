@@ -33,6 +33,8 @@ public:
     EqCurve eqCurve(EqType type, EqMode mode) const { return m_eqCurves[int(type)][int(mode)]; }
     int afGain() const { return m_afGain; }
     qint64 frequency(Vfo vfo) const { return vfo == Vfo::B ? m_freqB : m_freqA; }
+    Vfo rxVfo() const { return Vfo(m_rxVfo); }
+    Vfo txVfo() const { return Vfo(m_txVfo); }
     void setUnresponsive(bool on) { m_unresponsive = on; }
 
 private:

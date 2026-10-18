@@ -61,6 +61,14 @@ FrequencyDisplay::FrequencyDisplay(int pointSize, QWidget *parent)
     });
 }
 
+void FrequencyDisplay::setRole(const QString &role)
+{
+    if (role == m_role)
+        return;
+    m_role = role;
+    update();
+}
+
 void FrequencyDisplay::setLabel(const QString &label)
 {
     m_label = label;
@@ -134,8 +142,19 @@ void FrequencyDisplay::paintEvent(QPaintEvent *)
         QFont labelFont = font();
         labelFont.setBold(true);
         p.setFont(labelFont);
+        const QRect labelArea = rect().adjusted(8, 0, 0, 0);
         p.setPen(palette().color(QPalette::PlaceholderText));
-        p.drawText(rect().adjusted(8, 0, 0, 0), Qt::AlignLeft | Qt::AlignVCenter, m_label);
+        if (m_role.isEmpty()) {
+            p.drawText(labelArea, Qt::AlignLeft | Qt::AlignVCenter, m_label);
+        } else {
+            // Label just above the middle, role just below it.
+            const int middle = labelArea.center().y();
+            p.drawText(labelArea.adjusted(0, 0, 0, middle - labelArea.bottom()), Qt::AlignLeft | Qt::AlignBottom,
+                       m_label);
+            p.setPen(palette().color(QPalette::Highlight));
+            p.drawText(labelArea.adjusted(0, middle - labelArea.top() + 2, 0, 0), Qt::AlignLeft | Qt::AlignTop,
+                       m_role);
+        }
         p.setFont(m_font);
     }
 

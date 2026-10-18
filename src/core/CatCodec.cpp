@@ -75,6 +75,15 @@ bool modeSupportsData(Mode mode)
     return mode == Mode::LSB || mode == Mode::USB || mode == Mode::FM || mode == Mode::AM;
 }
 
+MenuNumbers menuNumbersFor(int modelId)
+{
+    if (modelId == kModelTs590S) {
+        // The S has no HI/LO vs WIDTH/SHIFT menus (SSB is always HI/LO).
+        return {-1, -1, 64, 65};
+    }
+    return {28, 29, 71, 72};
+}
+
 // ---------------------------------------------------------------- Equalizer
 
 int eqDbToRaw(int db)
@@ -208,6 +217,12 @@ QByteArray frequency(Vfo vfo, qint64 hz)
     hz = std::clamp(hz, kMinFrequencyHz, kMaxFrequencyHz);
     return (vfo == Vfo::B ? "FB" : "FA") + digits(hz, 11) + ';';
 }
+
+QByteArray rxVfo(Vfo vfo) { return "FR" + QByteArray::number(int(vfo)) + ';'; }
+
+QByteArray txVfo(Vfo vfo) { return "FT" + QByteArray::number(int(vfo)) + ';'; }
+
+QByteArray copyVfo() { return "VV;"; }
 
 QByteArray mode(Mode mode) { return "MD" + QByteArray::number(int(mode)) + ';'; }
 

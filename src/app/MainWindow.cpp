@@ -113,6 +113,8 @@ MainWindow::MainWindow(QWidget *parent)
     connect(&m_radio, &Radio::afGainChanged, this, follow(m_afSlider));
     connect(&m_radio, &Radio::squelchChanged, this, follow(m_sqlSlider));
     connect(&m_radio, &Radio::rfGainChanged, this, follow(m_rfSlider));
+    connect(&m_radio, &Radio::usbAudioInChanged, this, follow(m_usbInSlider));
+    connect(&m_radio, &Radio::usbAudioOutChanged, this, follow(m_usbOutSlider));
     connect(&m_radio, &Radio::filterChanged, this, &MainWindow::refreshFilters);
     connect(&m_radio, &Radio::eqCurveChanged, this, &MainWindow::refreshEq);
     connect(&m_radio, &Radio::eqLevelsChanged, this, &MainWindow::refreshEq);
@@ -195,6 +197,31 @@ QWidget *MainWindow::createVfoPanel()
     m_vfoB = new FrequencyDisplay(18);
     m_vfoB->setLabel(QStringLiteral("B"));
 
+    m_vfoButtons = new QButtonGroup(this);
+    m_vfoButtons->setExclusive(true);
+    auto *vfoRow = new QHBoxLayout;
+    for (Vfo vfo : {Vfo::A, Vfo::B}) {
+        auto *button = new QPushButton(vfo == Vfo::A ? QStringLiteral("A") : QStringLiteral("B"));
+        button->setCheckable(true);
+        button->setToolTip(tr("Receive and transmit on VFO %1").arg(button->text()));
+        m_vfoButtons->addButton(button, int(vfo));
+        vfoRow->addWidget(button);
+        m_radioControls << button;
+    }
+    connect(m_vfoButtons, &QButtonGroup::idClicked, this, [this](int id) { m_radio.selectVfo(Vfo(id)); });
+
+    m_splitButton = new QPushButton(tr("SPLIT"));
+    m_splitButton->setCheckable(true);
+    m_splitButton->setToolTip(tr("Transmit on the other VFO"));
+    connect(m_splitButton, &QPushButton::clicked, &m_radio, &Radio::setSplit);
+    auto *copyButton = new QPushButton(tr("A=B"));
+    copyButton->setToolTip(tr("Copy the receive VFO's frequency and mode to the other VFO"));
+    connect(copyButton, &QPushButton::clicked, &m_radio, &Radio::copyVfo);
+    vfoRow->addSpacing(8);
+    vfoRow->addWidget(m_splitButton);
+    vfoRow->addWidget(copyButton);
+    m_radioControls << m_splitButton << copyButton;
+
     m_vfoStatus = new QLabel;
     m_txIndicator = new QLabel(tr(" TX "));
     m_txIndicator->setAlignment(Qt::AlignCenter);
@@ -213,6 +240,7 @@ QWidget *MainWindow::createVfoPanel()
     auto *side = new QVBoxLayout;
     side->addWidget(m_sMeter);
     auto *statusRow = new QHBoxLayout;
+    statusRow->addLayout(vfoRow);
     statusRow->addWidget(m_vfoStatus);
     statusRow->addStretch();
     statusRow->addWidget(m_txIndicator);
@@ -255,11 +283,15 @@ QWidget *MainWindow::createModeBar()
     return bar;
 }
 
-QSlider *MainWindow::createLevelSlider(void (Radio::*setter)(int))
+QSlider *MainWindow::createLevelSlider(void (Radio::*setter)(int), int maximum)
 {
     auto *slider = new QSlider(Qt::Horizontal);
-    slider->setRange(0, 255);
-    slider->setPageStep(16);
+    slider->setRange(0, maximum);
+    slider->setPageStep(std::max(1, (maximum + 1) / 16));
+    if (maximum < 16) {
+        slider->setTickPosition(QSlider::TicksBelow);
+        slider->setTickInterval(1);
+    }
     connect(slider, &QSlider::valueChanged, this, [this, setter](int value) {
         if (!m_applyingRadioState)
             (m_radio.*setter)(value);
@@ -273,6 +305,10 @@ QWidget *MainWindow::createReceivePage()
     m_afSlider = createLevelSlider(&Radio::setAfGain);
     m_sqlSlider = createLevelSlider(&Radio::setSquelch);
     m_rfSlider = createLevelSlider(&Radio::setRfGain);
+    m_usbInSlider = createLevelSlider(&Radio::setUsbAudioIn, kUsbAudioLevelMax);
+    m_usbInSlider->setToolTip(tr("USB audio input level (menu 071): audio from the computer to the transmitter"));
+    m_usbOutSlider = createLevelSlider(&Radio::setUsbAudioOut, kUsbAudioLevelMax);
+    m_usbOutSlider->setToolTip(tr("USB audio output level (menu 072): received audio to the computer"));
 
     auto *levels = new QGroupBox(tr("Levels"));
     auto *levelsLayout = new QFormLayout(levels);
@@ -289,6 +325,8 @@ QWidget *MainWindow::createReceivePage()
     addLevel(tr("AF gain"), m_afSlider);
     addLevel(tr("Squelch"), m_sqlSlider);
     addLevel(tr("RF gain"), m_rfSlider);
+    addLevel(tr("USB in"), m_usbInSlider);
+    addLevel(tr("USB out"), m_usbOutSlider);
 
     m_filterA = new QRadioButton(tr("Filter A"));
     m_filterB = new QRadioButton(tr("Filter B"));
@@ -402,9 +440,13 @@ void MainWindow::onStateChanged(Radio::State state)
         m_radioInfo->setText(tr("Disconnected"));
         m_sMeter->setValue(0);
         m_txIndicator->setEnabled(false);
+        onVfoSelectionChanged(Vfo::A, Vfo::A);
         break;
     case Radio::State::Connecting: m_radioInfo->setText(tr("Connecting…")); break;
-    case Radio::State::Connected: onModeChanged(m_radio.mode(), m_radio.dataMode()); break;
+    case Radio::State::Connected:
+        onModeChanged(m_radio.mode(), m_radio.dataMode());
+        onVfoSelectionChanged(m_radio.rxVfo(), m_radio.txVfo());
+        break;
     }
 }
 
@@ -427,11 +469,27 @@ void MainWindow::onModeChanged(Mode mode, bool data)
 
 void MainWindow::onVfoSelectionChanged(Vfo rx, Vfo tx)
 {
-    auto name = [](Vfo vfo) {
-        return vfo == Vfo::A ? QStringLiteral("A") : vfo == Vfo::B ? QStringLiteral("B") : QStringLiteral("M");
+    const bool connected = m_radio.state() == Radio::State::Connected;
+    auto role = [&](Vfo vfo) {
+        if (!connected)
+            return QString();
+        if (rx == vfo && tx == vfo)
+            return tr("RX/TX");
+        return rx == vfo ? tr("RX") : tx == vfo ? tr("TX") : QString();
     };
-    m_vfoStatus->setText(rx == tx ? tr("RX/TX %1").arg(name(rx))
-                                  : tr("RX %1 · TX %2 (split)").arg(name(rx), name(tx)));
+    m_vfoA->setRole(role(Vfo::A));
+    m_vfoB->setRole(role(Vfo::B));
+
+    if (QAbstractButton *button = connected ? m_vfoButtons->button(int(rx)) : nullptr) {
+        button->setChecked(true);
+    } else if (QAbstractButton *checked = m_vfoButtons->checkedButton()) {
+        // Memory mode or disconnected: neither VFO is selected.
+        m_vfoButtons->setExclusive(false);
+        checked->setChecked(false);
+        m_vfoButtons->setExclusive(true);
+    }
+    m_splitButton->setChecked(connected && rx != tx && rx != Vfo::Memory);
+    m_vfoStatus->setText(connected && rx == Vfo::Memory ? tr("Memory channel") : QString());
 }
 
 void MainWindow::refreshFilters()

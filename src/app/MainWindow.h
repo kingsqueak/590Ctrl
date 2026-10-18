@@ -34,7 +34,7 @@ private:
     QWidget *createModeBar();
     QWidget *createReceivePage();
     QWidget *createEqualizerPage();
-    QSlider *createLevelSlider(void (ts590::Radio::*setter)(int));
+    QSlider *createLevelSlider(void (ts590::Radio::*setter)(int), int maximum = 255);
 
     void refreshPorts();
     void toggleConnection();
@@ -57,6 +57,8 @@ private:
     FrequencyDisplay *m_vfoA = nullptr;
     FrequencyDisplay *m_vfoB = nullptr;
     QLabel *m_vfoStatus = nullptr;
+    QButtonGroup *m_vfoButtons = nullptr;
+    QPushButton *m_splitButton = nullptr;
     QLabel *m_txIndicator = nullptr;
     QProgressBar *m_sMeter = nullptr;
 
@@ -66,6 +68,8 @@ private:
     QSlider *m_afSlider = nullptr;
     QSlider *m_sqlSlider = nullptr;
     QSlider *m_rfSlider = nullptr;
+    QSlider *m_usbInSlider = nullptr;
+    QSlider *m_usbOutSlider = nullptr;
 
     QRadioButton *m_filterA = nullptr;
     QRadioButton *m_filterB = nullptr;

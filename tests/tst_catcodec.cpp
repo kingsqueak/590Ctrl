@@ -36,6 +36,25 @@ private slots:
         QCOMPARE(cmd::filterValue(FilterCommand::IS, 800), QByteArray("IS 0800;"));
     }
 
+    void encodesVfoSelection()
+    {
+        QCOMPARE(cmd::rxVfo(Vfo::B), QByteArray("FR1;"));
+        QCOMPARE(cmd::txVfo(Vfo::A), QByteArray("FT0;"));
+        QCOMPARE(cmd::copyVfo(), QByteArray("VV;"));
+    }
+
+    void menuNumbersDependOnModel()
+    {
+        const MenuNumbers sg = menuNumbersFor(kModelTs590SG);
+        QCOMPARE(sg.usbAudioIn, 71);
+        QCOMPARE(sg.usbAudioOut, 72);
+        QCOMPARE(sg.ssbFilterMode, 28);
+        const MenuNumbers s = menuNumbersFor(kModelTs590S);
+        QCOMPARE(s.usbAudioIn, 64);
+        QCOMPARE(s.usbAudioOut, 65);
+        QCOMPARE(s.ssbFilterMode, -1);
+    }
+
     void encodesMenusAndEq()
     {
         QCOMPARE(cmd::readMenu(28), QByteArray("EX0280000;"));

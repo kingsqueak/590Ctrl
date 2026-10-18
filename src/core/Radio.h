@@ -21,7 +21,9 @@ class Radio : public QObject
     Q_OBJECT
 
 public:
-    enum class State { Disconnected, Connecting, Connected };
+    // PoweredOff: the port is open and the radio answers PS, but it's
+    // switched off (PS0), so nothing else is available.
+    enum class State { Disconnected, Connecting, PoweredOff, Connected };
     Q_ENUM(State)
 
     explicit Radio(QObject *parent = nullptr);
@@ -29,8 +31,15 @@ public:
 
     // Opens the transport, identifies the radio and pulls its state.
     void connectTransport(std::unique_ptr<CatTransport> transport);
+    // Wakes a radio that was switched off at its panel (the PS1 procedure from
+    // the reference guide), then connects as connectTransport does.
+    void powerOnAndConnect(std::unique_ptr<CatTransport> transport);
     // Restores the radio's original AI setting and closes the transport.
+    // Releases transmit first if this app keyed it.
     void disconnectFromRadio();
+
+    // PS1 / PS0. Off uses PS0, not PS9, so PS1 can turn it back on directly.
+    void setPower(bool on);
 
     State state() const { return m_state; }
     CatLink *link() { return &m_link; }
@@ -48,6 +57,7 @@ public:
     int rfGain() const { return m_rfGain; }
     int sMeter() const { return m_sMeter; }
     bool transmitting() const { return m_transmitting; }
+    bool vox() const { return m_vox; }   // break-in in CW
     int txMeter(TxMeter meter) const { return m_txMeters[int(meter) - 1]; }   // dots, 0..30
     // Menu-backed USB audio levels, 0..9; nullopt until read.
     std::optional<int> usbAudioIn() const { return m_usbAudioIn; }
@@ -102,6 +112,9 @@ public:
     void setCarrierLevel(int level);
     void setMicGain(int level);
     void setTxMonitor(int level);   // 0 turns the monitor off
+    void setVox(bool on);
+    // TX0 (SEND, mic input) / RX.
+    void setTransmit(bool on);
     void setTxFilter(TxFilter filter, int index);
     void setNotch(NotchMode mode, bool wide);
     void setNotchPosition(int position);
@@ -140,6 +153,7 @@ signals:
     void carrierLevelChanged(int level);
     void micGainChanged(int level);
     void txMonitorChanged(int level);
+    void voxChanged(bool on);
     void txFilterChanged(ts590::TxFilter filter);
     void notchChanged();   // mode or bandwidth
     void notchPositionChanged(int position);
@@ -170,7 +184,10 @@ private:
     void setLevel(QByteArray (*encode)(int), std::optional<int> &field, int level, int maximum);
     void pollMeter();
     void teardown();
-
+    void resetRadioState();
+    void enterPoweredOff();
+    void startBooting();
+    void bootTick();
     template <typename T, typename Signal>
     void update(T &field, T value, Signal signal)
     {
@@ -186,6 +203,10 @@ private:
     bool m_meterPolling = true;
 
     int m_identifyAttempts = 0;
+    bool m_awaitingIdentity = false;   // PS1 seen, waiting for ID to start the sync
+    QTimer m_bootTimer;                // polls ID while the radio powers up
+    int m_bootAttempts = 0;
+    bool m_keyed = false;              // this app sent TX and hasn't sent RX
     int m_modelId = 0;
     QString m_firmware;
     std::optional<int> m_originalAutoInfo;
@@ -201,6 +222,7 @@ private:
     int m_rfGain = 0;
     int m_sMeter = 0;
     bool m_transmitting = false;
+    bool m_vox = false;
     int m_txMeters[3] = {};   // SWR, COMP, ALC
     std::optional<int> m_usbAudioIn;
     std::optional<int> m_usbAudioOut;

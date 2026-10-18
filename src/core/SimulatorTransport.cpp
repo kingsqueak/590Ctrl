@@ -138,6 +138,8 @@ QByteArray SimulatorTransport::answerFor(QByteArrayView name) const
         return "FW" + digits(m_fw, 4);
     if (name == "IS")
         return "IS " + digits(m_is, 4);
+    if (name == "VX")
+        return m_vox ? "VX1" : "VX0";
     if (name == "RT")
         return m_rit ? "RT1" : "RT0";
     if (name == "XT")
@@ -187,11 +189,38 @@ void SimulatorTransport::handle(const QByteArray &command)
     const QByteArrayView args = QByteArrayView(command).sliced(name.size());
     const bool isRead = args.isEmpty();
 
+    constexpr int kBootMs = 400;
+    if (m_panelOff) {
+        // Only the wake-up command gets through; the radio then boots.
+        if (command == "PS1") {
+            m_panelOff = false;
+            m_powered = true;
+            m_booting.start();
+        }
+        return;
+    }
+    if (m_booting.isValid() && m_booting.elapsed() < kBootMs)
+        return;
+
     if (command.isEmpty()) {
         reply("?");
         return;
     }
 
+    if (name == "PS") {
+        if (isRead)
+            return reply(m_powered ? "PS1" : "PS0");
+        if (args != "0" && args != "1" && args != "9")
+            return reply("?");
+        m_powered = args == "1";
+        if (!m_powered) {
+            m_transmitting = false;
+            m_autoInfo = 0;   // AI2 is not kept across power-off
+        }
+        return;
+    }
+    if (!m_powered)
+        return;   // switched off: only PS works
     if (name == "ID" && isRead)
         return reply("ID023");
     if (name == "FV" && isRead)
@@ -224,6 +253,15 @@ void SimulatorTransport::handle(const QByteArray &command)
             m_txVfo = vfo;
         return echo(name.toByteArray() + QByteArray::number(vfo));
     }
+    // TX and RX key and unkey; with AI on the radio reports the change.
+    if (name == "TX" && (args.isEmpty() || args == "0" || args == "1" || args == "2")) {
+        m_transmitting = true;
+        return echo("TX" + (args.isEmpty() ? QByteArray("0") : args.toByteArray()));
+    }
+    if (name == "RX" && isRead) {
+        m_transmitting = false;
+        return echo("RX");
+    }
     // RC takes no parameters, so it looks like a read; it isn't one.
     if (name == "RC" && isRead) {
         if (!m_rit && !m_xit)
@@ -252,6 +290,12 @@ void SimulatorTransport::handle(const QByteArray &command)
     }
 
     // ---- set commands and parameterized reads
+    if (name == "VX") {
+        if (args != "0" && args != "1")
+            return reply("?");
+        m_vox = args == "1";
+        return echo(answerFor("VX"));
+    }
     if (name == "RT" || name == "XT") {
         if (args != "0" && args != "1")
             return reply("?");

@@ -291,6 +291,90 @@ private slots:
         QTRY_COMPARE(sim->txMonitor(), 0);
     }
 
+    void connectsToSwitchedOffRadioAndPowersItOn()
+    {
+        Radio radio;
+        auto transport = std::make_unique<SimulatorTransport>();
+        SimulatorTransport *sim = transport.get();
+        sim->setPowered(false);
+        radio.connectTransport(std::move(transport));
+        radio.setMeterPolling(false);
+        QTRY_COMPARE(radio.state(), Radio::State::PoweredOff);
+        QCOMPARE(radio.frequency(Vfo::A), 0);
+
+        radio.setPower(true);
+        QTRY_COMPARE(radio.state(), Radio::State::Connected);
+        QVERIFY(sim->powered());
+        QTRY_COMPARE(radio.frequency(Vfo::A), 14'195'000);
+    }
+
+    void powersOff()
+    {
+        Radio radio;
+        SimulatorTransport *sim = connectSim(radio);
+        radio.setPower(false);
+        QCOMPARE(radio.state(), Radio::State::PoweredOff);
+        QTRY_VERIFY(!sim->powered());
+        QVERIFY(sim->received().contains("PS0"));   // PS0, not PS9: PS1 can wake it
+    }
+
+    void wakesPanelOffRadio()
+    {
+        Radio radio;
+        auto transport = std::make_unique<SimulatorTransport>();
+        transport->setPanelOff(true);
+        SimulatorTransport *sim = transport.get();
+        radio.powerOnAndConnect(std::move(transport));
+        radio.setMeterPolling(false);
+        QTRY_COMPARE_WITH_TIMEOUT(radio.state(), Radio::State::Connected, 6000);
+        QVERIFY(sim->powered());
+        const QByteArrayList sent = sim->received();
+        QCOMPARE(sent.value(0), QByteArray());   // the ";" before PS1
+        QCOMPARE(sent.value(1), QByteArray("PS1"));
+    }
+
+    void panelOffRadioFailsPlainConnect()
+    {
+        Radio radio;
+        radio.link()->setReplyTimeout(30);
+        auto transport = std::make_unique<SimulatorTransport>();
+        transport->setPanelOff(true);
+        QSignalSpy messages(&radio, &Radio::message);
+        radio.connectTransport(std::move(transport));
+        QTRY_COMPARE(radio.state(), Radio::State::Disconnected);
+        QVERIFY(messages.value(0).value(0).toString().contains(QStringLiteral("power button")));
+    }
+
+    void transmitAndVox()
+    {
+        Radio radio;
+        SimulatorTransport *sim = connectSim(radio);
+        radio.setVox(true);
+        QTRY_VERIFY(radio.vox());
+        QVERIFY(sim->vox());
+
+        radio.setTransmit(true);
+        QTRY_VERIFY(radio.transmitting());
+        QVERIFY(sim->transmitting());
+        radio.setTransmit(false);
+        QTRY_VERIFY(!radio.transmitting());
+        QVERIFY(!sim->transmitting());
+    }
+
+    void disconnectReleasesTransmit()
+    {
+        Radio radio;
+        SimulatorTransport *sim = connectSim(radio);
+        radio.setTransmit(true);
+        QTRY_VERIFY(radio.transmitting());
+        QPointer<SimulatorTransport> guard(sim);
+        radio.disconnectFromRadio();
+        QVERIFY(guard);
+        const QByteArrayList sent = sim->received();
+        QCOMPARE(sent.value(sent.size() - 2), QByteArray("RX"));   // then the AI restore
+        QVERIFY(!sim->transmitting());
+    }
+
     void modeChangeRefreshesFilterLayout()
     {
         Radio radio;

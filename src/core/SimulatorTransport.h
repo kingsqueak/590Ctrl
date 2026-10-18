@@ -3,6 +3,7 @@
 #include "CatCodec.h"
 #include "CatTransport.h"
 
+#include <QElapsedTimer>
 #include <QHash>
 
 namespace ts590 {
@@ -49,6 +50,14 @@ public:
     int noiseReduction() const { return m_noiseReduction; }
     int nrLevel(int reduction) const { return m_nrLevels[reduction]; }
     void setUnresponsive(bool on) { m_unresponsive = on; }
+    // PS0 state: answers PS only.
+    void setPowered(bool on) { m_powered = on; }
+    // Switched off at the front panel: silent until the wake-up sequence
+    // (";" then "PS1;"), then booting for a moment before it answers.
+    void setPanelOff(bool on) { m_panelOff = on; m_powered = !on; }
+    bool powered() const { return m_powered; }
+    bool transmitting() const { return m_transmitting; }
+    bool vox() const { return m_vox; }
     // Pretends to key up (reported via AI as TX/RX) with these meter readings.
     void simulateTransmit(bool on, int swr = 0, int comp = 0, int alc = 0);
 
@@ -93,6 +102,10 @@ private:
     int m_notchMode = 0;
     bool m_notchWide = false;
     int m_notchPosition = 64;
+    bool m_powered = true;
+    bool m_panelOff = false;
+    QElapsedTimer m_booting;
+    bool m_vox = false;
     bool m_transmitting = false;
     int m_txMeters[3] = {};   // SWR, COMP, ALC
     int m_noiseBlanker = 0;

@@ -10,6 +10,11 @@ namespace {
 
 constexpr int kMeterIntervalMs = 200;
 constexpr int kIdentifyAttempts = 3;
+// After PS1 the radio takes a few seconds to boot; poll ID until it answers.
+constexpr int kBootPollMs = 1000;
+constexpr int kBootAttempts = 15;
+// Wake-up from panel-off: ";" then PS1 within 2 s, at least 200 ms apart.
+constexpr int kWakeDelayMs = 300;
 // Auto Information level used while connected: on, not persisted, so the
 // radio drops back to its own setting if the app dies without cleaning up.
 constexpr int kAutoInfoLevel = 2;
@@ -35,6 +40,8 @@ Radio::Radio(QObject *parent)
     connect(&m_link, &CatLink::queryTimedOut, this, &Radio::handleTimeout);
     m_meterTimer.setInterval(kMeterIntervalMs);
     connect(&m_meterTimer, &QTimer::timeout, this, &Radio::pollMeter);
+    m_bootTimer.setInterval(kBootPollMs);
+    connect(&m_bootTimer, &QTimer::timeout, this, &Radio::bootTick);
     // Each transmission starts its SWR/COMP/ALC readings from zero.
     connect(this, &Radio::transmitChanged, this, [this](bool transmitting) {
         if (transmitting && (m_txMeters[0] || m_txMeters[1] || m_txMeters[2])) {
@@ -61,6 +68,75 @@ void Radio::connectTransport(std::unique_ptr<CatTransport> transport)
     setState(State::Connecting);
     m_identifyAttempts = 0;
     m_link.send(kFlushCommand);
+    // Power state first: an off radio answers PS but nothing else.
+    m_link.query("PS;");
+}
+
+void Radio::powerOnAndConnect(std::unique_ptr<CatTransport> transport)
+{
+    disconnectFromRadio();
+    if (!transport->open()) {
+        emit message(tr("Could not open %1: %2").arg(transport->description(), transport->errorString()));
+        return;
+    }
+    connect(transport.get(), &CatTransport::failed, this, &Radio::handleTransportFailure);
+    m_link.setTransport(std::move(transport));
+    setState(State::Connecting);
+    m_link.send(kFlushCommand);
+    QTimer::singleShot(kWakeDelayMs, this, [this] {
+        if (m_state != State::Connecting)
+            return;
+        m_link.send("PS1;");
+        startBooting();
+    });
+}
+
+void Radio::setPower(bool on)
+{
+    if (on && m_state == State::PoweredOff) {
+        m_link.send("PS1;");
+        startBooting();
+    } else if (!on && m_state == State::Connected) {
+        m_link.clear();
+        if (m_keyed || m_transmitting)
+            m_link.send("RX;");
+        m_keyed = false;
+        m_link.send("PS0;");
+        enterPoweredOff();
+    }
+}
+
+void Radio::enterPoweredOff()
+{
+    m_meterTimer.stop();
+    m_bootTimer.stop();
+    m_awaitingIdentity = false;
+    resetRadioState();
+    setState(State::PoweredOff);
+}
+
+void Radio::startBooting()
+{
+    m_awaitingIdentity = true;
+    m_bootAttempts = 0;
+    m_bootTimer.start();
+    bootTick();
+}
+
+void Radio::bootTick()
+{
+    if (!m_awaitingIdentity) {
+        m_bootTimer.stop();
+        return;
+    }
+    if (++m_bootAttempts > kBootAttempts) {
+        m_bootTimer.stop();
+        m_awaitingIdentity = false;
+        emit message(tr("The radio did not come up after power-on."));
+        if (m_state == State::Connecting)
+            teardown();
+        return;
+    }
     m_link.query("ID;");
 }
 
@@ -70,7 +146,10 @@ void Radio::disconnectFromRadio()
         return;
     if (CatTransport *transport = m_link.transport(); transport && transport->isOpen()) {
         m_link.clear();
-        // Bypass the queue: put AI back the way we found it before closing.
+        // Bypass the queue. Never leave the radio transmitting.
+        if (m_keyed || m_transmitting)
+            transport->write("RX;");
+        // Put AI back the way we found it.
         if (m_originalAutoInfo)
             transport->write(cmd::autoInfo(*m_originalAutoInfo));
         transport->flush();
@@ -81,11 +160,22 @@ void Radio::disconnectFromRadio()
 void Radio::teardown()
 {
     m_meterTimer.stop();
+    m_bootTimer.stop();
+    m_awaitingIdentity = false;
     m_link.setTransport(nullptr);
+    m_originalAutoInfo.reset();
+    resetRadioState();
+    setState(State::Disconnected);
+}
 
+// Everything learned from the radio, so a fresh sync re-reads it all and
+// every value is reported as changed.
+void Radio::resetRadioState()
+{
+    m_keyed = false;
+    m_vox = false;
     m_modelId = 0;
     m_firmware.clear();
-    m_originalAutoInfo.reset();
     m_mode = Mode::None;
     m_data = false;
     m_transmitting = false;
@@ -115,7 +205,6 @@ void Radio::teardown()
     }
     m_eqLevels[0].reset();
     m_eqLevels[1].reset();
-    setState(State::Disconnected);
 }
 
 void Radio::handleTransportFailure(const QString &text)
@@ -153,7 +242,7 @@ void Radio::requestFullState()
     }
     for (int menu : menus.txFilter)
         m_link.query(cmd::readMenu(menu));
-    for (const char *read : {"FA;", "FB;", "FR;", "FT;", "IF;", "RT;", "XT;", "DA;", "AG0;", "SQ0;", "RG;", "PC;", "NT;", "BP;", "NB;", "NR;", "CG;", "MG;", "ML;"})
+    for (const char *read : {"FA;", "FB;", "FR;", "FT;", "IF;", "RT;", "XT;", "DA;", "AG0;", "SQ0;", "RG;", "PC;", "NT;", "BP;", "NB;", "NR;", "CG;", "MG;", "ML;", "VX;"})
         m_link.query(read);
     if (m_modelId == kModelTs590SG)
         m_link.query("TP;");
@@ -208,10 +297,27 @@ void Radio::handleFrame(const QByteArray &frame)
         return;
     const QByteArrayView name = QByteArrayView(frame).first(2);
 
-    if (name == "ID") {
+    if (name == "PS" && frame.size() == 3) {
+        const bool on = frame[2] == '1';
+        if (m_state == State::Connecting && !m_awaitingIdentity) {
+            // Answer to the initial PS query.
+            if (on) {
+                m_awaitingIdentity = true;
+                m_link.query("ID;");
+            } else {
+                enterPoweredOff();
+            }
+        } else if (!on && m_state == State::Connected) {
+            enterPoweredOff();   // switched off at the panel (reported via AI)
+        } else if (on && m_state == State::PoweredOff && !m_awaitingIdentity) {
+            startBooting();      // switched on at the panel
+        }
+    } else if (name == "ID") {
         m_modelId = numberAt(frame, 2).value_or(0);
-        if (m_state != State::Connecting)
+        if (!m_awaitingIdentity)
             return;
+        m_awaitingIdentity = false;
+        m_bootTimer.stop();
         if (m_modelId == kModelTs590S)
             emit message(tr("This is a TS-590S. 590Ctrl targets the TS-590SG; some filter tables differ."));
         else if (m_modelId != kModelTs590SG)
@@ -357,6 +463,8 @@ void Radio::handleFrame(const QByteArray &frame)
             m_txMeters[meter] = *dots;
             emit txMetersChanged();
         }
+    } else if (name == "VX" && frame.size() == 3) {
+        update(m_vox, frame[2] == '1', &Radio::voxChanged);
     } else if (name == "TX") {
         update(m_transmitting, true, &Radio::transmitChanged);
     } else if (name == "RX") {
@@ -455,7 +563,9 @@ void Radio::handleRejected(const QByteArray &command, char code)
 {
     if (command == kFlushCommand)
         return;
-    if (m_state == State::Connecting && command == "ID;") {
+    if (command == "ID;" && m_bootTimer.isActive())
+        return;   // still booting; the boot timer asks again
+    if (m_awaitingIdentity && command == "ID;") {
         if (++m_identifyAttempts < kIdentifyAttempts) {
             m_link.query("ID;");
             return;
@@ -472,6 +582,12 @@ void Radio::handleRejected(const QByteArray &command, char code)
         m_link.query(command.left(2) + ';');
         return;
     }
+    if (command == "TX0;") {
+        m_keyed = false;
+        emit message(tr("The radio refused to transmit (check TX inhibit and the band edges)."));
+        emit transmitChanged(false);
+        return;
+    }
     if (command.startsWith("EQ")) {
         emit message(tr("The radio rejected the EQ curve change (%1).").arg(QString::fromLatin1(command)));
         refreshEq();
@@ -483,10 +599,12 @@ void Radio::handleRejected(const QByteArray &command, char code)
 
 void Radio::handleTimeout(const QByteArray &command)
 {
-    if (m_state == State::Connecting && command == "ID;") {
+    if (command == "ID;" && m_bootTimer.isActive())
+        return;   // still booting; the boot timer asks again
+    if (m_state == State::Connecting && (command == "PS;" || command == "ID;")) {
         const CatTransport *transport = m_link.transport();
-        emit message(tr("No answer from the radio on %1. Check that it is powered on and that the "
-                        "USB port speed (menu 068) matches.")
+        emit message(tr("No answer from the radio on %1. If it is switched off, use the power button to "
+                        "turn it on; otherwise check that the USB port speed (menu 068) matches.")
                          .arg(transport ? transport->description() : QString()));
         teardown();
         return;
@@ -688,6 +806,22 @@ void Radio::setNrLevel(int level)
     m_nrLevel = std::clamp(level, low, high);
     m_link.send(cmd::nrLevel(m_noiseReduction, *m_nrLevel), "RL");
     m_link.query("RL;");
+}
+
+void Radio::setVox(bool on)
+{
+    m_link.send(on ? "VX1;" : "VX0;", "VX");
+    m_link.query("VX;");
+}
+
+void Radio::setTransmit(bool on)
+{
+    if (m_state != State::Connected && on)
+        return;
+    m_keyed = on;
+    // Same key for TX and RX: a quick tap that's still queued collapses to
+    // the final state instead of keying up and down.
+    m_link.send(on ? "TX0;" : "RX;", "TX");
 }
 
 void Radio::setMode(Mode mode)

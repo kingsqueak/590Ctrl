@@ -19,6 +19,7 @@ class QSpinBox;
 class QFormLayout;
 class EqualizerPanel;
 class FrequencyDisplay;
+class PowerButton;
 class SMeter;
 
 class MainWindow : public QMainWindow
@@ -45,6 +46,8 @@ private:
 
     void refreshPorts();
     void toggleConnection();
+    void togglePower();
+    std::unique_ptr<ts590::CatTransport> createTransport();   // from the port/baud selection
     void onStateChanged(ts590::Radio::State state);
     void onModeChanged(ts590::Mode mode, bool data);
     void onVfoSelectionChanged(ts590::Vfo rx, ts590::Vfo tx);
@@ -64,6 +67,7 @@ private:
     QComboBox *m_portCombo = nullptr;
     QComboBox *m_baudCombo = nullptr;
     QPushButton *m_connectButton = nullptr;
+    PowerButton *m_powerButton = nullptr;
 
     FrequencyDisplay *m_vfoA = nullptr;
     FrequencyDisplay *m_vfoB = nullptr;
@@ -100,6 +104,9 @@ private:
     QSlider *m_txPowerSlider = nullptr;
     QSlider *m_tunePowerSlider = nullptr;
     QSlider *m_carrierSlider = nullptr;
+    QPushButton *m_voxButton = nullptr;
+    QPushButton *m_sendButton = nullptr;   // latching transmit
+    QPushButton *m_txButton = nullptr;     // momentary transmit
 
     QRadioButton *m_filterA = nullptr;
     QRadioButton *m_filterB = nullptr;

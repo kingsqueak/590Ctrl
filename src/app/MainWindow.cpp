@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 
+#include "PowerButton.h"
 #include "CatMonitor.h"
 #include "EqualizerPanel.h"
 #include "FrequencyDisplay.h"
@@ -21,6 +22,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMenuBar>
+#include <QMessageBox>
 #include <QPushButton>
 #include <QRadioButton>
 #include <QSettings>
@@ -144,7 +146,12 @@ MainWindow::MainWindow(QWidget *parent)
     connect(&m_radio, &Radio::transmitChanged, this, [this](bool tx) {
         m_txIndicator->setEnabled(tx);
         m_sMeter->setTransmitting(tx);
+        // Back on receive for any reason (TX released, time-out timer,
+        // refused): SEND is no longer latched.
+        if (!tx)
+            m_sendButton->setChecked(false);
     });
+    connect(&m_radio, &Radio::voxChanged, m_voxButton, &QPushButton::setChecked);
     auto follow = [this](QSlider *slider) {
         return [this, slider](int value) {
             if (slider->isSliderDown())
@@ -242,6 +249,10 @@ QWidget *MainWindow::createConnectionBar()
     m_connectButton->setDefault(true);
     connect(m_connectButton, &QPushButton::clicked, this, &MainWindow::toggleConnection);
 
+    m_powerButton = new PowerButton;
+    m_powerButton->setToolTip(tr("Radio power"));
+    connect(m_powerButton, &PowerButton::clicked, this, &MainWindow::togglePower);
+
     auto *bar = new QWidget;
     auto *layout = new QHBoxLayout(bar);
     layout->setContentsMargins(4, 2, 4, 2);
@@ -250,6 +261,8 @@ QWidget *MainWindow::createConnectionBar()
     layout->addWidget(refresh);
     layout->addWidget(m_baudCombo);
     layout->addWidget(m_connectButton);
+    layout->addSpacing(6);
+    layout->addWidget(m_powerButton);
     layout->addStretch();
 
     refreshPorts();
@@ -679,6 +692,49 @@ QWidget *MainWindow::createTransmitGroup()
     carrierRow->addWidget(m_carrierSlider, 1);
     carrierRow->addWidget(carrierValue);
     m_transmitForm->addRow(tr("Carrier"), carrierRow);
+
+    m_voxButton = new QPushButton(tr("VOX"));
+    m_voxButton->setCheckable(true);
+    m_voxButton->setToolTip(tr("Voice-operated transmit (break-in in CW)"));
+    connect(m_voxButton, &QPushButton::clicked, &m_radio, &Radio::setVox);
+
+    // SEND latches: red while transmitting until clicked again.
+    m_sendButton = new QPushButton(tr("SEND"));
+    m_sendButton->setObjectName(QStringLiteral("sendButton"));
+    m_sendButton->setCheckable(true);
+    m_sendButton->setToolTip(tr("Transmit until clicked again"));
+    m_sendButton->setStyleSheet(QStringLiteral(
+        "#sendButton { padding: 4px 12px; border: 1px solid palette(mid); border-radius: 4px;"
+        "  background: palette(button); }"
+        "#sendButton:checked { background: #e74c3c; color: white; font-weight: bold; border-color: #c0392b; }"
+        "#sendButton:disabled { color: palette(mid); }"));
+    connect(m_sendButton, &QPushButton::clicked, &m_radio, &Radio::setTransmit);
+
+    // TX is momentary: transmits only while held down.
+    m_txButton = new QPushButton(tr("TX"));
+    m_txButton->setObjectName(QStringLiteral("txButton"));
+    m_txButton->setToolTip(tr("Hold to transmit"));
+    m_txButton->setStyleSheet(QStringLiteral(
+        "#txButton { padding: 8px; border: none; border-radius: 4px; font-weight: bold; color: white;"
+        "  background: #2ecc71; }"
+        "#txButton:pressed { background: #e74c3c; }"
+        "#txButton:disabled { background: palette(midlight); color: palette(mid); }"));
+    connect(m_txButton, &QPushButton::pressed, this, [this] { m_radio.setTransmit(true); });
+    connect(m_txButton, &QPushButton::released, this, [this] { m_radio.setTransmit(false); });
+    // A held button can miss its release if the app loses focus mid-press.
+    connect(qApp, &QGuiApplication::applicationStateChanged, this, [this](Qt::ApplicationState appState) {
+        if (appState != Qt::ApplicationActive && m_txButton->isDown()) {
+            m_txButton->setDown(false);
+            m_radio.setTransmit(false);
+        }
+    });
+    m_radioControls << m_voxButton << m_sendButton << m_txButton;
+
+    auto *keying = new QGridLayout;
+    keying->addWidget(m_voxButton, 0, 0);
+    keying->addWidget(m_sendButton, 0, 1);
+    keying->addWidget(m_txButton, 1, 0, 1, 2);
+    m_transmitForm->addRow(keying);
     return group;
 }
 
@@ -732,22 +788,50 @@ void MainWindow::toggleConnection()
         m_radio.disconnectFromRadio();
         return;
     }
+    m_radio.connectTransport(createTransport());
+}
+
+std::unique_ptr<CatTransport> MainWindow::createTransport()
+{
     const QString port = m_portCombo->currentData().toString();
     const qint32 baud = m_baudCombo->currentData().toInt();
     QSettings settings;
     settings.setValue(QStringLiteral("serial/port"), port);
     settings.setValue(QStringLiteral("serial/baud"), baud);
-
     if (port == kSimulatorPort)
-        m_radio.connectTransport(std::make_unique<SimulatorTransport>());
-    else
-        m_radio.connectTransport(std::make_unique<SerialTransport>(SerialSettings{port, baud}));
+        return std::make_unique<SimulatorTransport>();
+    return std::make_unique<SerialTransport>(SerialSettings{port, baud});
+}
+
+void MainWindow::togglePower()
+{
+    switch (m_radio.state()) {
+    case Radio::State::Disconnected:
+        // Wakes a radio switched off at its panel, then connects.
+        m_radio.powerOnAndConnect(createTransport());
+        break;
+    case Radio::State::PoweredOff:
+        m_radio.setPower(true);
+        showMessage(tr("Powering on…"));
+        break;
+    case Radio::State::Connected:
+        if (QMessageBox::question(this, tr("Radio Power"), tr("Turn the radio off?")) == QMessageBox::Yes)
+            m_radio.setPower(false);
+        break;
+    case Radio::State::Connecting: break;
+    }
 }
 
 void MainWindow::onStateChanged(Radio::State state)
 {
     const bool connected = state == Radio::State::Connected;
     m_connectButton->setText(state == Radio::State::Disconnected ? tr("Connect") : tr("Disconnect"));
+    m_powerButton->setPowered(connected);
+    m_powerButton->setEnabled(state != Radio::State::Connecting);
+    m_powerButton->setToolTip(connected                                ? tr("Turn the radio off")
+                              : state == Radio::State::PoweredOff      ? tr("Turn the radio on")
+                              : state == Radio::State::Disconnected    ? tr("Turn the radio on and connect")
+                                                                       : tr("Radio power"));
     m_portCombo->setEnabled(state == Radio::State::Disconnected);
     m_baudCombo->setEnabled(state == Radio::State::Disconnected);
     for (QWidget *widget : std::as_const(m_radioControls))
@@ -757,7 +841,8 @@ void MainWindow::onStateChanged(Radio::State state)
 
     switch (state) {
     case Radio::State::Disconnected:
-        m_radioInfo->setText(tr("Disconnected"));
+    case Radio::State::PoweredOff:
+        m_radioInfo->setText(state == Radio::State::PoweredOff ? tr("Radio is switched off") : tr("Disconnected"));
         m_sMeter->reset();
         m_txIndicator->setEnabled(false);
         onVfoSelectionChanged(Vfo::A, Vfo::A);

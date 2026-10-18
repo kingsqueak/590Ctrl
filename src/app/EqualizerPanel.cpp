@@ -24,7 +24,7 @@ namespace {
 
 const QString kExportDirKey = QStringLiteral("eq/presetDir");
 
-QString bandLabel(int band)
+QString eqBandLabel(int band)
 {
     const int hz = eqBandFrequencyHz(band);
     return hz < 1000 ? QString::number(hz) : QString::number(hz / 1000.0, 'f', 1) + QLatin1Char('k');
@@ -81,7 +81,7 @@ EqualizerPanel::EqualizerPanel(EqType type, EqPresetLibrary *library, QWidget *p
         slider->setToolTip(tr("%1 Hz").arg(eqBandFrequencyHz(band)));
         connect(slider, &QSlider::valueChanged, this, [this, band] { onSliderChanged(band); });
 
-        auto *freq = new QLabel(bandLabel(band));
+        auto *freq = new QLabel(eqBandLabel(band));
         freq->setAlignment(Qt::AlignCenter);
         freq->setForegroundRole(QPalette::PlaceholderText);
 

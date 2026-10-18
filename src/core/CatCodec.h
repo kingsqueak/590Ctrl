@@ -117,6 +117,18 @@ bool nr2Supported(Mode mode);            // not in FM
 std::pair<int, int> nrLevelRange(NoiseReduction nr);
 QString noiseReductionName(NoiseReduction nr);
 
+// Bands (BD/BU): 0 = 1.8 MHz ... 9 = 50 MHz, 10 = GENE. Selecting the band
+// you're already on steps through that band's memories.
+constexpr int kBandCount = 11;
+constexpr int kGeneralBand = 10;
+QString bandLabel(int band);                     // "1.8", ..., "50", "GENE"
+QString bandWavelength(int band);                // "160 m", ..., "" for GENE
+// The amateur band containing hz, or kGeneralBand outside them all.
+int bandForFrequency(qint64 hz);
+
+// Speech processor (PR on/off) and its levels (PL: input and output, 0..100).
+constexpr int kProcessorLevelMax = 100;
+
 // AGC (GC) and its time constant (GT, 1..20). Slow and fast keep separate
 // time constants; GT applies to whichever is on and is rejected while AGC is
 // off. Neither works in FM.
@@ -238,6 +250,9 @@ QByteArray startTuning();
 QByteArray stopTuning(bool rxIn);
 QByteArray notch(NotchMode mode, bool wide);     // NT; `wide` only counts in Manual
 QByteArray noiseBlanker(NoiseBlanker nb);        // NB
+QByteArray band(int band);                       // BD
+QByteArray processor(bool on);                   // PR
+QByteArray processorLevels(int input, int output);   // PL
 QByteArray agc(Agc agc);                         // GC
 // GC3: the only way to turn AGC back on from off (the radio rejects GC1/GC2
 // then); it returns to whichever of slow/fast was active before.

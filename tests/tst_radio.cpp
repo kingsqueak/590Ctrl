@@ -473,6 +473,33 @@ private slots:
         QTRY_VERIFY(!radio.tuner());
     }
 
+    void bandSelection()
+    {
+        Radio radio;
+        connectSim(radio);
+        radio.selectBand(2);
+        QTRY_COMPARE(radio.frequency(Vfo::A), 7'074'000);
+        QCOMPARE(bandForFrequency(radio.frequency(Vfo::A)), 2);
+        radio.selectBand(4);   // back to 20 m: its memory kept 14.195
+        QTRY_COMPARE(radio.frequency(Vfo::A), 14'195'000);
+    }
+
+    void speechProcessor()
+    {
+        Radio radio;
+        SimulatorTransport *sim = connectSim(radio);
+        QVERIFY(!radio.processor());
+        QCOMPARE(radio.processorInput(), std::optional(50));
+
+        radio.setProcessor(true);
+        QTRY_VERIFY(radio.processor());
+        radio.setProcessorLevels(30, 70);
+        QTRY_COMPARE(sim->processorInput(), 30);
+        QCOMPARE(sim->processorOutput(), 70);
+        radio.setProcessor(false);
+        QTRY_VERIFY(!sim->processor());
+    }
+
     void modeChangeRefreshesFilterLayout()
     {
         Radio radio;

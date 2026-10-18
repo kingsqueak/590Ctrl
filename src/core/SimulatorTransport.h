@@ -47,6 +47,9 @@ public:
     int notchPosition() const { return m_notchPosition; }
     int noiseBlanker() const { return m_noiseBlanker; }
     int agc() const { return m_agc; }
+    bool processor() const { return m_processor; }
+    int processorInput() const { return m_processorInput; }
+    int processorOutput() const { return m_processorOutput; }
     int agcTime(int agc) const { return m_agcTimes[agc]; }
     int nbLevel(int blanker) const { return m_nbLevels[blanker]; }
     int noiseReduction() const { return m_noiseReduction; }
@@ -120,6 +123,12 @@ private:
     QByteArray m_tuner = "000";   // AC P1 P2 P3
     bool m_transmitting = false;
     int m_txMeters[3] = {};   // SWR, COMP, ALC
+    bool m_processor = false;
+    int m_processorInput = 50;
+    int m_processorOutput = 50;
+    int m_band = 4;                  // 14 MHz, matching m_freqA
+    qint64 m_bandMemory[11] = {1'840'000, 3'573'000, 7'074'000, 10'136'000, 14'195'000, 18'100'000,
+                               21'074'000, 24'915'000, 28'074'000, 50'313'000, 5'000'000};
     int m_agc = 1;
     int m_agcBeforeOff = 1;
     int m_agcTimes[3] = {0, 12, 4};   // [1] slow, [2] fast

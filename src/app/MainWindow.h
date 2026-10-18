@@ -42,6 +42,7 @@ private:
     QWidget *createNotchGroup();
     QWidget *createTransmitGroup();
     QWidget *createEqualizerPage();
+    QWidget *createBandsPage();
     QSlider *createLevelSlider(void (ts590::Radio::*setter)(int), int maximum = 255);
 
     void refreshPorts();
@@ -56,6 +57,8 @@ private:
     void refreshNotch();
     void refreshNoise();
     void refreshAgc();
+    void refreshBand();
+    void refreshProcessor();
     void refreshMonitor();
     void refreshAntenna();
     void refreshFrontEnd();   // ATT / PRE button
@@ -117,6 +120,14 @@ private:
     QSlider *m_tunePowerSlider = nullptr;
     QSlider *m_carrierSlider = nullptr;
     QSlider *m_voxGainSlider = nullptr;
+    // PROC: one button steps on -> IN (slider = input level) -> OUT (slider
+    // = output level) -> off.
+    enum class ProcessorTarget { None, Input, Output };
+    ProcessorTarget m_processorTarget = ProcessorTarget::None;
+    QPushButton *m_processorButton = nullptr;
+    QSlider *m_processorSlider = nullptr;
+    QLabel *m_processorValue = nullptr;
+    QButtonGroup *m_bandButtons = nullptr;
     QPushButton *m_voxButton = nullptr;
     QPushButton *m_sendButton = nullptr;   // latching transmit
     QPushButton *m_txButton = nullptr;     // momentary transmit

@@ -158,6 +158,10 @@ QByteArray SimulatorTransport::answerFor(QByteArrayView name) const
         return "NT" + QByteArray::number(m_notchMode) + (m_notchWide ? '1' : '0');
     if (name == "BP")
         return "BP" + digits(m_notchPosition, 3);
+    if (name == "PR")
+        return m_processor ? "PR1" : "PR0";
+    if (name == "PL")
+        return "PL" + digits(m_processorInput, 3) + digits(m_processorOutput, 3);
     if (name == "GC")   // not available in FM
         return m_mode == Mode::FM ? QByteArray() : "GC" + QByteArray::number(m_agc);
     if (name == "GT")   // only with AGC on, and not in FM
@@ -375,6 +379,31 @@ void SimulatorTransport::handle(const QByteArray &command)
             return reply("?");
         m_ritXitOffset = std::clamp(m_ritXitOffset + (name == "RU" ? *hz : -*hz), -kRitXitMaxHz, kRitXitMaxHz);
         return echo(answerFor("IF"));   // AI reports offset changes via IF
+    }
+    if (name == "PR") {
+        if (args != "0" && args != "1")
+            return reply("?");
+        m_processor = args == "1";
+        return echo(answerFor("PR"));
+    }
+    if (name == "PL") {
+        const auto input = args.size() == 6 ? number(args.first(3)) : std::nullopt;
+        const auto output = args.size() == 6 ? number(args.sliced(3)) : std::nullopt;
+        if (!input || !output)
+            return reply("?");
+        m_processorInput = std::min(*input, kProcessorLevelMax);
+        m_processorOutput = std::min(*output, kProcessorLevelMax);
+        return echo(answerFor("PL"));
+    }
+    if (name == "BD" || name == "BU") {
+        const auto band = args.size() == 2 ? number(args) : std::nullopt;
+        if (!band || *band >= kBandCount)
+            return reply("?");
+        // One memory per band here; the real radio steps through several.
+        m_bandMemory[m_band] = m_freqA;
+        m_band = *band;
+        m_freqA = m_bandMemory[m_band];
+        return echo(answerFor("FA"));
     }
     if (name == "GC") {
         const auto value = args.size() == 1 ? number(args) : std::nullopt;

@@ -155,6 +155,45 @@ double rfGainMeterDots(int level)
     return (255 - std::clamp(level, 0, 255)) * double(kSMeterMaxDots) / 255;
 }
 
+namespace {
+
+struct BandInfo {
+    const char *label;
+    const char *wavelength;
+    qint64 lowHz;
+    qint64 highHz;
+};
+// Widest IARU allocations, so the right button lights in any region.
+constexpr BandInfo kBands[kBandCount] = {
+    {"1.8", "160 m", 1'800'000, 2'000'000},     {"3.5", "80 m", 3'500'000, 4'000'000},
+    {"7", "40 m", 7'000'000, 7'300'000},         {"10", "30 m", 10'100'000, 10'150'000},
+    {"14", "20 m", 14'000'000, 14'350'000},      {"18", "17 m", 18'068'000, 18'168'000},
+    {"21", "15 m", 21'000'000, 21'450'000},      {"24", "12 m", 24'890'000, 24'990'000},
+    {"28", "10 m", 28'000'000, 29'700'000},      {"50", "6 m", 50'000'000, 54'000'000},
+    {"GENE", "", 0, 0},
+};
+
+}   // namespace
+
+QString bandLabel(int band)
+{
+    return QString::fromLatin1(kBands[std::clamp(band, 0, kBandCount - 1)].label);
+}
+
+QString bandWavelength(int band)
+{
+    return QString::fromLatin1(kBands[std::clamp(band, 0, kBandCount - 1)].wavelength);
+}
+
+int bandForFrequency(qint64 hz)
+{
+    for (int band = 0; band < kGeneralBand; ++band) {
+        if (hz >= kBands[band].lowHz && hz <= kBands[band].highHz)
+            return band;
+    }
+    return kGeneralBand;
+}
+
 bool agcSupported(Mode mode)
 {
     return mode != Mode::FM;
@@ -384,6 +423,16 @@ QByteArray txPower(int watts) { return "PC" + digits(std::clamp(watts, kTxPowerM
 QByteArray notch(NotchMode mode, bool wide)
 {
     return "NT" + QByteArray::number(int(mode)) + (mode == NotchMode::Manual && wide ? "1;" : "0;");
+}
+
+QByteArray band(int band) { return "BD" + digits(std::clamp(band, 0, kBandCount - 1), 2) + ';'; }
+
+QByteArray processor(bool on) { return on ? "PR1;" : "PR0;"; }
+
+QByteArray processorLevels(int input, int output)
+{
+    return "PL" + digits(std::clamp(input, 0, kProcessorLevelMax), 3)
+           + digits(std::clamp(output, 0, kProcessorLevelMax), 3) + ';';
 }
 
 QByteArray agc(Agc agc) { return "GC" + QByteArray::number(int(agc)) + ';'; }

@@ -117,6 +117,7 @@ MainWindow::MainWindow(QWidget *parent)
     auto *tabs = new QTabWidget;
     tabs->addTab(createOperatePage(), tr("Operate"));
     tabs->addTab(createEqualizerPage(), tr("Equalizer"));
+    tabs->addTab(createBandsPage(), tr("Bands"));
 
     auto *central = new QWidget;
     auto *layout = new QVBoxLayout(central);
@@ -180,8 +181,11 @@ MainWindow::MainWindow(QWidget *parent)
     });
     connect(&m_radio, &Radio::frequencyChanged, this, [this](Vfo vfo, qint64 hz) {
         (vfo == Vfo::B ? m_vfoB : m_vfoA)->setFrequency(hz);
+        refreshBand();
     });
     connect(&m_radio, &Radio::vfoSelectionChanged, this, &MainWindow::onVfoSelectionChanged);
+    connect(&m_radio, &Radio::vfoSelectionChanged, this, &MainWindow::refreshBand);
+    connect(&m_radio, &Radio::processorChanged, this, &MainWindow::refreshProcessor);
     connect(&m_radio, &Radio::modeChanged, this, &MainWindow::onModeChanged);
     connect(&m_radio, &Radio::sMeterChanged, m_sMeter, &SMeter::setValue);
     // Follows the slider, so the marker moves while dragging too.
@@ -860,6 +864,52 @@ QWidget *MainWindow::createTransmitGroup()
     voxGainRow->addWidget(voxGainValue);
     m_transmitForm->addRow(tr("VOX level"), voxGainRow);
 
+    m_processorButton = new QPushButton(tr("PROC"));
+    m_processorButton->setCheckable(true);
+    m_processorButton->setToolTip(tr("Speech processor: click to turn on, again for the IN level, "
+                                     "again for the OUT level, again for off"));
+    m_processorButton->setMinimumWidth(m_processorButton->fontMetrics().horizontalAdvance(tr("PROC OUT")) + 24);
+    connect(m_processorButton, &QPushButton::clicked, this, [this] {
+        // Only the first and last clicks reach the radio; IN and OUT just
+        // choose which level the slider edits.
+        if (!m_radio.processor()) {
+            m_processorTarget = ProcessorTarget::None;
+            m_radio.setProcessor(true);
+        } else if (m_processorTarget == ProcessorTarget::None) {
+            m_processorTarget = ProcessorTarget::Input;
+        } else if (m_processorTarget == ProcessorTarget::Input) {
+            m_processorTarget = ProcessorTarget::Output;
+        } else {
+            m_processorTarget = ProcessorTarget::None;
+            m_radio.setProcessor(false);
+        }
+        refreshProcessor();
+    });
+    // PL carries both levels, so the slider writes whichever is selected and
+    // sends the other one unchanged.
+    m_processorSlider = new QSlider(Qt::Horizontal);
+    m_processorSlider->setRange(0, kProcessorLevelMax);
+    m_processorSlider->setPageStep(10);
+    m_processorValue = new QLabel;
+    m_processorValue->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    m_processorValue->setMinimumWidth(carrierValue->minimumWidth());
+    connect(m_processorSlider, &QSlider::valueChanged, this, [this](int level) {
+        m_processorValue->setNum(level);
+        if (m_applyingRadioState || !m_radio.processor() || m_processorTarget == ProcessorTarget::None)
+            return;
+        const int input = m_radio.processorInput().value_or(0);
+        const int output = m_radio.processorOutput().value_or(0);
+        if (m_processorTarget == ProcessorTarget::Input)
+            m_radio.setProcessorLevels(level, output);
+        else
+            m_radio.setProcessorLevels(input, level);
+    });
+    auto *processorRow = new QHBoxLayout;
+    processorRow->addWidget(m_processorSlider, 1);
+    processorRow->addWidget(m_processorValue);
+    m_transmitForm->addRow(m_processorButton, processorRow);
+    m_radioControls << m_processorButton;
+
     m_voxButton = new QPushButton(tr("VOX"));
     m_voxButton->setCheckable(true);
     m_voxButton->setToolTip(tr("Voice-operated transmit (break-in in CW)"));
@@ -919,6 +969,47 @@ QWidget *MainWindow::createTransmitGroup()
     keying->addWidget(m_txButton, 1, 0, 1, 3);
     m_transmitForm->addRow(keying);
     return group;
+}
+
+QWidget *MainWindow::createBandsPage()
+{
+    m_bandButtons = new QButtonGroup(this);
+    m_bandButtons->setExclusive(true);
+
+    auto *grid = new QGridLayout;
+    grid->setSpacing(8);
+    constexpr int kColumns = 6;
+    for (int band = 0; band < kBandCount; ++band) {
+        const QString wavelength = bandWavelength(band);
+        auto *button = new QPushButton(wavelength.isEmpty() ? bandLabel(band)
+                                                            : QStringLiteral("%1\n%2").arg(bandLabel(band), wavelength));
+        button->setCheckable(true);
+        button->setMinimumSize(96, 64);
+        button->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        QFont font = button->font();
+        font.setPointSizeF(font.pointSizeF() * 1.25);
+        font.setBold(true);
+        button->setFont(font);
+        button->setToolTip(band == kGeneralBand ? tr("General coverage")
+                                                : tr("%1 MHz band (%2)").arg(bandLabel(band), wavelength));
+        m_bandButtons->addButton(button, band);
+        grid->addWidget(button, band / kColumns, band % kColumns);
+        m_radioControls << button;
+    }
+    connect(m_bandButtons, &QButtonGroup::idClicked, this, [this](int band) {
+        m_radio.selectBand(band);
+        refreshBand();   // the highlight follows the radio's frequency, not the click
+    });
+
+    auto *hint = new QLabel(tr("Click the current band again to step through its band memories."));
+    hint->setForegroundRole(QPalette::PlaceholderText);
+
+    auto *page = new QWidget;
+    auto *layout = new QVBoxLayout(page);
+    layout->addLayout(grid);
+    layout->addWidget(hint);
+    layout->addStretch();
+    return page;
 }
 
 QWidget *MainWindow::createEqualizerPage()
@@ -1036,6 +1127,8 @@ void MainWindow::onStateChanged(Radio::State state)
         refreshMonitor();
         refreshAntenna();
         refreshFrontEnd();
+        refreshBand();
+        refreshProcessor();
         break;
     case Radio::State::Connecting: m_radioInfo->setText(tr("Connecting…")); break;
     case Radio::State::Connected:
@@ -1050,6 +1143,8 @@ void MainWindow::onStateChanged(Radio::State state)
         refreshMonitor();
         refreshAntenna();
         refreshFrontEnd();
+        refreshBand();
+        refreshProcessor();
         break;
     }
 }
@@ -1244,6 +1339,50 @@ void MainWindow::refreshFrontEnd()
     const bool pre = connected && m_radio.preamp();
     m_attenuatorButton->setText(pre && !att ? tr("PRE") : tr("ATT"));
     m_attenuatorButton->setChecked(att || pre);
+}
+
+void MainWindow::refreshBand()
+{
+    const bool connected = m_radio.state() == Radio::State::Connected;
+    const Vfo rx = m_radio.rxVfo();
+    QAbstractButton *current = connected && rx != Vfo::Memory
+                                   ? m_bandButtons->button(bandForFrequency(m_radio.frequency(rx)))
+                                   : nullptr;
+    if (current) {
+        current->setChecked(true);
+    } else if (QAbstractButton *checked = m_bandButtons->checkedButton()) {
+        m_bandButtons->setExclusive(false);
+        checked->setChecked(false);
+        m_bandButtons->setExclusive(true);
+    }
+}
+
+void MainWindow::refreshProcessor()
+{
+    const bool connected = m_radio.state() == Radio::State::Connected;
+    const bool on = connected && m_radio.processor();
+    if (!on)
+        m_processorTarget = ProcessorTarget::None;
+    const ProcessorTarget target = m_processorTarget;
+    const bool output = target == ProcessorTarget::Output;
+    m_processorButton->setText(target == ProcessorTarget::Input ? tr("PROC IN")
+                               : output                         ? tr("PROC OUT")
+                                                                : tr("PROC"));
+    m_processorButton->setChecked(on);
+    // Plain "on" selects no level, so there's nothing for the slider to edit.
+    m_processorSlider->setEnabled(on && target != ProcessorTarget::None);
+    m_processorSlider->setToolTip(output ? tr("Speech processor output level") : tr("Speech processor input level"));
+    if (target == ProcessorTarget::None) {
+        m_processorValue->clear();
+        return;
+    }
+    const auto level = output ? m_radio.processorOutput() : m_radio.processorInput();
+    if (level && !m_processorSlider->isSliderDown()) {
+        m_applyingRadioState = true;
+        m_processorSlider->setValue(*level);
+        m_applyingRadioState = false;
+        m_processorValue->setNum(*level);
+    }
 }
 
 void MainWindow::refreshAgc()

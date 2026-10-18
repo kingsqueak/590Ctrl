@@ -205,6 +205,9 @@ void Radio::resetRadioState()
     m_nrLevel.reset();
     m_agc = Agc::Off;
     m_agcTime.reset();
+    m_processor = false;
+    m_processorInput.reset();
+    m_processorOutput.reset();
     for (auto &perType : m_eqCurves) {
         for (auto &curve : perType)
             curve.reset();
@@ -248,7 +251,7 @@ void Radio::requestFullState()
     }
     for (int menu : menus.txFilter)
         m_link.query(cmd::readMenu(menu));
-    for (const char *read : {"FA;", "FB;", "FR;", "FT;", "IF;", "RT;", "XT;", "DA;", "AG0;", "SQ0;", "RG;", "PC;", "NT;", "BP;", "NB;", "NR;", "CG;", "MG;", "ML;", "VX;", "VG;", "AN;", "RA;", "PA;", "AC;"})
+    for (const char *read : {"FA;", "FB;", "FR;", "FT;", "IF;", "RT;", "XT;", "DA;", "AG0;", "SQ0;", "RG;", "PC;", "NT;", "BP;", "NB;", "NR;", "CG;", "MG;", "ML;", "VX;", "VG;", "AN;", "RA;", "PA;", "AC;", "PR;", "PL;"})
         m_link.query(read);
     if (m_modelId == kModelTs590SG)
         m_link.query("TP;");
@@ -423,6 +426,19 @@ void Radio::handleFrame(const QByteArray &frame)
             if (nbLevelAdjustable(m_noiseBlanker))
                 m_link.query("NL;");
             emit noiseBlankerChanged();
+        }
+    } else if (name == "PR" && frame.size() == 3) {
+        if (m_processor != (frame[2] == '1')) {
+            m_processor = frame[2] == '1';
+            emit processorChanged();
+        }
+    } else if (name == "PL" && frame.size() == 8) {
+        const auto input = numberAt(frame, 2, 3);
+        const auto output = numberAt(frame, 5, 3);
+        if (input && output && (m_processorInput != *input || m_processorOutput != *output)) {
+            m_processorInput = *input;
+            m_processorOutput = *output;
+            emit processorChanged();
         }
     } else if (name == "GC" && frame.size() == 3) {
         const int value = frame[2] - '0';
@@ -833,6 +849,31 @@ void Radio::setNotchPosition(int position)
     m_notchPosition = std::clamp(position, 0, kNotchPositionMax);
     m_link.send(cmd::notchPosition(*m_notchPosition), "BP");
     m_link.query("BP;");
+}
+
+void Radio::setProcessor(bool on)
+{
+    m_link.send(cmd::processor(on), "PR");
+    m_link.query("PR;");
+}
+
+void Radio::setProcessorLevels(int input, int output)
+{
+    m_processorInput = std::clamp(input, 0, kProcessorLevelMax);
+    m_processorOutput = std::clamp(output, 0, kProcessorLevelMax);
+    m_link.send(cmd::processorLevels(*m_processorInput, *m_processorOutput), "PL");
+    m_link.query("PL;");
+}
+
+void Radio::selectBand(int band)
+{
+    if (m_state != State::Connected)
+        return;
+    // No coalescing key: pressing the same band twice steps its memories
+    // twice, so every press has to reach the radio.
+    m_link.send(cmd::band(band));
+    for (const char *read : {"FA;", "FB;", "MD;", "DA;"})
+        m_link.query(read);
 }
 
 void Radio::setAgc(Agc agc)

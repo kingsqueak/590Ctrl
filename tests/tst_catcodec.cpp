@@ -149,6 +149,20 @@ private slots:
         QCOMPARE(cmd::stopTuning(false), QByteArray("AC010;"));
     }
 
+    void bandsAndProcessor()
+    {
+        QCOMPARE(cmd::band(4), QByteArray("BD04;"));
+        QCOMPARE(cmd::band(kGeneralBand), QByteArray("BD10;"));
+        QCOMPARE(bandForFrequency(7'222'000), 2);
+        QCOMPARE(bandForFrequency(14'000'000), 4);
+        QCOMPARE(bandForFrequency(50'313'000), 9);
+        QCOMPARE(bandForFrequency(5'000'000), kGeneralBand);
+        QCOMPARE(bandLabel(0), QStringLiteral("1.8"));
+        QCOMPARE(bandWavelength(8), QStringLiteral("10 m"));
+        QCOMPARE(cmd::processor(true), QByteArray("PR1;"));
+        QCOMPARE(cmd::processorLevels(40, 150), QByteArray("PL040100;"));
+    }
+
     void menuNumbersDependOnModel()
     {
         const MenuNumbers sg = menuNumbersFor(kModelTs590SG);

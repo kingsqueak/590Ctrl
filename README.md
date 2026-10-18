@@ -49,6 +49,9 @@ No radio handy? Pick **Simulator (no radio)** as the port.
 * The EQ curve is selected per mode family (SSB, SSB-DATA, CW, FM, FM-DATA,
   AM, AM-DATA, FSK) with the `EQ` command. The editor always works on the
   family for the current mode.
+* The radio keeps one User curve for RX and one for TX, shared by every mode
+  family set to **U** (checked on a TS-590SG with firmware 1.07). Editing U in
+  SSB also changes U in SSB-DATA, AM and the rest.
 * Band levels (`UR`/`UT`) can always be read. Writing them fails while the
   curve is OFF. Per the Kenwood reference, only the **U** curve keeps them in
   the radio.

@@ -196,7 +196,7 @@ void EqualizerPanel::updateEnabledState()
     else if (*m_curve == EqCurve::Off)
         hint = tr("EQ is OFF for %1. Select a curve to edit levels.").arg(mode);
     else if (*m_curve == EqCurve::User)
-        hint = tr("Editing the User curve. Changes are stored in the radio.");
+        hint = tr("Editing the User curve. It is stored in the radio and shared by every mode set to U.");
     else
         hint = tr("Preset curve for %1. Levels are kept only on U (User).").arg(mode);
     m_hint->setText(hint);

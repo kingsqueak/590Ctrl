@@ -67,7 +67,8 @@ public:
     // Selects the curve for the current mode family.
     void setEqCurve(EqType type, EqCurve curve);
     // Writes all 18 bands. Rejected by the radio while the curve is OFF; the
-    // spec says levels persist only when the curve is U (User).
+    // spec says levels persist only when the curve is U (User). There is one
+    // U curve per EQ type, shared by all mode families (verified on hardware).
     void setEqLevels(EqType type, const EqLevels &levels);
     void refreshEq();
 

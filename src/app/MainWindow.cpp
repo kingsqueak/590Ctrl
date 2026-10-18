@@ -486,11 +486,11 @@ QWidget *MainWindow::createEqualizerPage()
 {
     m_rxEq = new EqualizerPanel(EqType::Rx, &m_eqPresets);
     m_txEq = new EqualizerPanel(EqType::Tx, &m_eqPresets);
-    auto *page = new QWidget;
-    auto *layout = new QVBoxLayout(page);
-    layout->addWidget(m_rxEq);
-    layout->addWidget(m_txEq);
-    return page;
+    auto *tabs = new QTabWidget;
+    tabs->setDocumentMode(true);
+    tabs->addTab(m_rxEq, tr("RX Equalizer"));
+    tabs->addTab(m_txEq, tr("TX Equalizer"));
+    return tabs;
 }
 
 // ---------------------------------------------------------------- connection

@@ -45,7 +45,7 @@ QString exportDirectory()
 }   // namespace
 
 EqualizerPanel::EqualizerPanel(EqType type, EqPresetLibrary *library, QWidget *parent)
-    : QGroupBox(type == EqType::Rx ? tr("RX Equalizer") : tr("TX Equalizer"), parent)
+    : QWidget(parent)
     , m_type(type)
     , m_library(library)
 {

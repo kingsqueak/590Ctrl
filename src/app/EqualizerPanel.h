@@ -2,7 +2,7 @@
 
 #include "CatCodec.h"
 
-#include <QGroupBox>
+#include <QWidget>
 
 #include <optional>
 
@@ -20,7 +20,7 @@ class EqPresetLibrary;
 // the current mode family, and the preset library: named curves that can be
 // applied to the radio and bound to a mode family for automatic loading into
 // the radio's single User curve.
-class EqualizerPanel : public QGroupBox
+class EqualizerPanel : public QWidget
 {
     Q_OBJECT
 

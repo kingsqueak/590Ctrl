@@ -23,7 +23,7 @@ Version 0.10 · Licensed under the [GPL-3.0](LICENSE).
 - NB (NB1 / NB2 / both) and NR (NR1 / NR2), each with its level
 - AGC off / slow / fast, with the time constant for the active mode
 - IF filter A/B with the mode-dependent high/low-cut or width/shift controls
-- Auto and manual notch, with bandwidth and position
+- Beat cancel (BC1 / BC2), and auto and manual notch with bandwidth and position
 - Antenna: ANT1/ANT2, RX ANT, DRV, and the internal tuner (AT in line, ATun to
   run a tune cycle)
 
@@ -35,9 +35,17 @@ Version 0.10 · Licensed under the [GPL-3.0](LICENSE).
 - SEND (latching), TUN (latching tune carrier at tune power) and a momentary TX
   button. The app always releases transmit before disconnecting or quitting.
 
+**CW** tab
+- Keyer speed, pitch, break-in on/off with its delay (or full break-in), and
+  CW TUNE
+- Keyboard CW: type a line and press Enter; longer text is fed to the radio as
+  its buffer frees up, and STOP drops what hasn't been keyed yet
+- The TS-590SG's Morse decoder with its threshold and a scrolling text window
+
 **Meter**
 - S-meter with S1–S9 / +20–+60 dB scale, smooth color zones, peak hold and an
   RF gain marker
+- A green SQL over the peak readout while the squelch is set and open
 - On transmit: power in watts, SWR, speech-processor compression in dB, and ALC
 
 **Equalizer**

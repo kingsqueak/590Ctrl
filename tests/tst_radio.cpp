@@ -500,6 +500,105 @@ private slots:
         QTRY_VERIFY(!sim->processor());
     }
 
+    void beatCancel()
+    {
+        Radio radio;
+        SimulatorTransport *sim = connectSim(radio);
+        QCOMPARE(radio.beatCancel(), BeatCancel::Off);
+        radio.setBeatCancel(BeatCancel::BC2);
+        QTRY_COMPARE(radio.beatCancel(), BeatCancel::BC2);
+        QCOMPARE(sim->beatCancel(), 2);
+
+        // Not available in CW: nothing is sent, so the radio can't reject it.
+        radio.setMode(Mode::CW);
+        QTRY_COMPARE(radio.mode(), Mode::CW);
+        QSignalSpy messages(&radio, &Radio::message);
+        radio.setBeatCancel(BeatCancel::Off);
+        settle(radio);
+        QVERIFY(!sim->received().contains("BC0"));
+        QCOMPARE(messages.count(), 0);
+    }
+
+    void busyFollowsSquelch()
+    {
+        Radio radio;
+        SimulatorTransport *sim = connectSim(radio);
+        radio.setMeterPolling(true);
+        sim->setSMeter(5);
+        sim->setSquelchLevel(0);
+        QTRY_VERIFY(radio.busy());
+        sim->setSquelchLevel(200);
+        QTRY_VERIFY(!radio.busy());
+    }
+
+    void keyerSettings()
+    {
+        Radio radio;
+        SimulatorTransport *sim = connectSim(radio);
+        QCOMPARE(radio.keyerSpeed(), std::optional(20));
+        QCOMPARE(radio.breakInDelay(), std::optional(300));
+        QCOMPARE(radio.cwPitch(), std::optional(6));
+
+        radio.setKeyerSpeed(28);
+        radio.setBreakInDelay(0);
+        radio.setCwPitch(8);
+        QTRY_COMPARE(sim->keyerSpeed(), 28);
+        QTRY_COMPARE(sim->breakInDelay(), 0);
+        QTRY_COMPARE(sim->menu(40), 8);
+        QVERIFY(sim->received().contains("EX040000008"));   // two-digit value
+    }
+
+    void cwTuneNeedsCwMode()
+    {
+        Radio radio;
+        SimulatorTransport *sim = connectSim(radio);
+        radio.setCwTune(true);   // USB: not sent
+        settle(radio);
+        QVERIFY(!sim->received().contains("CA1"));
+
+        radio.setMode(Mode::CW);
+        QTRY_COMPARE(radio.mode(), Mode::CW);
+        radio.setCwTune(true);
+        QTRY_VERIFY(radio.cwTune());
+        QTRY_VERIFY(!radio.cwTune());   // finishes on its own
+    }
+
+    void keyboardCw()
+    {
+        Radio radio;
+        SimulatorTransport *sim = connectSim(radio);
+        QSignalSpy messages(&radio, &Radio::message);
+        radio.sendCw(QStringLiteral("cq"));   // USB: refused
+        QCOMPARE(messages.count(), 1);
+        QCOMPARE(radio.cwQueued(), 0);
+
+        radio.setMode(Mode::CW);
+        QTRY_COMPARE(radio.mode(), Mode::CW);
+        radio.sendCw(QStringLiteral("cq cq cq de kc2rgw kc2rgw kc2rgw k"));
+        radio.sendCw(QStringLiteral("pse k"));
+        QTRY_COMPARE(radio.cwQueued(), 0);
+        QTRY_COMPARE(sim->keyedCw(), QByteArray(" CQ CQ CQ DE KC2RGW KC2RGW KC2RGW K PSE K"));
+    }
+
+    void morseDecoder()
+    {
+        Radio radio;
+        SimulatorTransport *sim = connectSim(radio);
+        QVERIFY(!radio.morseDecoder());
+        QCOMPARE(radio.decoderThreshold(), std::optional(10));
+        radio.setMode(Mode::CW);
+        QSignalSpy decoded(&radio, &Radio::morseDecoded);
+        radio.setMorseDecoder(true);
+        QTRY_VERIFY(radio.morseDecoder());
+        QTRY_VERIFY(decoded.count() >= 3);
+        QCOMPARE(decoded.at(0).at(0).toString() + decoded.at(1).at(0).toString() + decoded.at(2).at(0).toString(),
+                 QStringLiteral("CQ "));
+        radio.setDecoderThreshold(15);
+        QTRY_COMPARE(sim->decoderThreshold(), 15);
+        radio.setMorseDecoder(false);
+        QTRY_VERIFY(!sim->morseDecoder());
+    }
+
     void modeChangeRefreshesFilterLayout()
     {
         Radio radio;

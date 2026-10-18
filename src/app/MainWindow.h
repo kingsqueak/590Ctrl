@@ -17,6 +17,9 @@ class QRadioButton;
 class QSlider;
 class QSpinBox;
 class QFormLayout;
+class QGroupBox;
+class QLineEdit;
+class QPlainTextEdit;
 class EqualizerPanel;
 class FrequencyDisplay;
 class PowerButton;
@@ -43,6 +46,7 @@ private:
     QWidget *createTransmitGroup();
     QWidget *createEqualizerPage();
     QWidget *createBandsPage();
+    QWidget *createCwPage();
     QSlider *createLevelSlider(void (ts590::Radio::*setter)(int), int maximum = 255);
 
     void refreshPorts();
@@ -59,6 +63,10 @@ private:
     void refreshAgc();
     void refreshBand();
     void refreshProcessor();
+    void refreshBeatCancel();
+    void refreshSquelchOpen();
+    void refreshKeyer();
+    void refreshDecoder();
     void refreshMonitor();
     void refreshAntenna();
     void refreshFrontEnd();   // ATT / PRE button
@@ -140,10 +148,25 @@ private:
     ts590::FilterLayout m_filterLayout;
     QComboBox *m_txFilterCombos[ts590::kTxFilterCount] = {};
 
+    QPushButton *m_beatCancelButton = nullptr;   // cycles BC -> BC1 -> BC2 -> off
     QPushButton *m_autoNotchButton = nullptr;
     QPushButton *m_manualNotchButton = nullptr;
     QCheckBox *m_notchWideCheck = nullptr;
     QSlider *m_notchSlider = nullptr;
+
+    QSlider *m_keyerSpeedSlider = nullptr;
+    QSlider *m_pitchSlider = nullptr;
+    QPushButton *m_breakInButton = nullptr;   // VOX key, which is break-in in CW
+    QSlider *m_breakInDelaySlider = nullptr;  // 50 ms steps, 0 = full break-in
+    QPushButton *m_cwTuneButton = nullptr;
+    QLineEdit *m_cwEdit = nullptr;
+    QPushButton *m_cwSendButton = nullptr;
+    QPushButton *m_cwStopButton = nullptr;
+    QLabel *m_cwQueueLabel = nullptr;
+    QGroupBox *m_decoderGroup = nullptr;      // TS-590SG only
+    QPushButton *m_decoderButton = nullptr;
+    QSlider *m_decoderSlider = nullptr;
+    QPlainTextEdit *m_decoderText = nullptr;
 
     EqualizerPanel *m_rxEq = nullptr;
     EqualizerPanel *m_txEq = nullptr;

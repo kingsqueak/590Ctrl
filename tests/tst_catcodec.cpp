@@ -163,6 +163,43 @@ private slots:
         QCOMPARE(cmd::processorLevels(40, 150), QByteArray("PL040100;"));
     }
 
+    void beatCancelAndCw()
+    {
+        QCOMPARE(cmd::beatCancel(BeatCancel::BC2), QByteArray("BC2;"));
+        QCOMPARE(beatCancelName(BeatCancel::Off), QStringLiteral("BC"));
+        QVERIFY(beatCancelSupported(Mode::FM));
+        QVERIFY(!beatCancelSupported(Mode::CW));
+        QVERIFY(!beatCancelSupported(Mode::FSKR));
+        QCOMPARE(cmd::keyerSpeed(25), QByteArray("KS025;"));
+        QCOMPARE(cmd::keyerSpeed(2), QByteArray("KS004;"));
+        QCOMPARE(cmd::breakInDelay(0), QByteArray("SD0000;"));
+        QCOMPARE(cmd::breakInDelay(320), QByteArray("SD0300;"));   // rounds down to 50 ms
+        QCOMPARE(cmd::breakInDelay(5000), QByteArray("SD1000;"));
+        QCOMPARE(cmd::cwTune(true), QByteArray("CA1;"));
+        QCOMPARE(cmd::morseDecoder(true), QByteArray("CD01;"));
+        QCOMPARE(cmd::decoderThreshold(45), QByteArray("CD1030;"));
+        QCOMPARE(cwPitchHz(0), 300);
+        QCOMPARE(cwPitchHz(kCwPitchIndexMax), 1000);
+        QCOMPARE(menuNumbersFor(kModelTs590SG).cwPitch, 40);
+        QCOMPARE(menuNumbersFor(kModelTs590S).cwPitch, 34);
+    }
+
+    void keyboardCw()
+    {
+        QCOMPARE(cwText(u"cq de kc2rgw; <ar>é"), QByteArray("CQ DE KC2RGW <AR>"));
+        QCOMPARE(cmd::sendCw("CQ"), QByteArray("KY CQ                      ;"));
+        QCOMPARE(cmd::sendCw("CQ").size(), 3 + kCwChunkLength + 1);
+        QCOMPARE(cmd::stopCw(), QByteArray("KY0;"));
+
+        QCOMPARE(splitCwText("CQ CQ"), QList<QByteArray>{"CQ CQ"});
+        // Breaks between words; the space leads the next piece.
+        const QList<QByteArray> pieces = splitCwText("CQ CQ CQ DE KC2RGW KC2RGW KC2RGW K");
+        QCOMPARE(pieces, (QList<QByteArray>{"CQ CQ CQ DE KC2RGW", " KC2RGW KC2RGW K"}));
+        // A word longer than a piece is cut where it must be.
+        const QByteArray longWord(30, 'E');
+        QCOMPARE(splitCwText(longWord), (QList<QByteArray>{longWord.left(24), longWord.mid(24)}));
+    }
+
     void menuNumbersDependOnModel()
     {
         const MenuNumbers sg = menuNumbersFor(kModelTs590SG);

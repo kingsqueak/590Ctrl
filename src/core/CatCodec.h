@@ -54,6 +54,7 @@ struct MenuNumbers {
     int powerFine = -1;           // OFF: power in 5 W steps, ON: 1 W steps
     // Transmit filter menus, indexed by TxFilter.
     std::array<int, 4> txFilter = {-1, -1, -1, -1};
+    int cwPitch = -1;             // CW pitch / sidetone, 0..14 (two-digit value)
 };
 MenuNumbers menuNumbersFor(int modelId);
 constexpr int kUsbAudioLevelMax = 9;
@@ -137,6 +138,38 @@ constexpr int kAgcTimeMin = 1;
 constexpr int kAgcTimeMax = 20;
 bool agcSupported(Mode mode);
 QString agcName(Agc agc);
+
+// Beat cancel (BC). A TS-590SG rejects BC, even BC0, in CW and FSK.
+enum class BeatCancel : int { Off = 0, BC1 = 1, BC2 = 2 };
+QString beatCancelName(BeatCancel bc);   // "BC", "BC1", "BC2"
+bool beatCancelSupported(Mode mode);
+
+// CW keyer speed (KS, WPM) and break-in delay (SD, ms in 50 ms steps;
+// 0 = full break-in).
+constexpr int kKeyerSpeedMin = 4;
+constexpr int kKeyerSpeedMax = 60;
+constexpr int kBreakInDelayMax = 1000;
+constexpr int kBreakInDelayStep = 50;
+// CW pitch / sidetone, an EX menu index: 0 = 300 Hz ... 14 = 1000 Hz.
+constexpr int kCwPitchMinHz = 300;
+constexpr int kCwPitchMaxHz = 1000;
+constexpr int kCwPitchStepHz = 50;
+constexpr int cwPitchHz(int index) { return kCwPitchMinHz + index * kCwPitchStepHz; }
+constexpr int kCwPitchIndexMax = (kCwPitchMaxHz - kCwPitchMinHz) / kCwPitchStepHz;
+bool isCwMode(Mode mode);   // CW or CW-R
+
+// Morse decoder (CD0/CD1/CD2, TS-590SG only): threshold 1..30.
+constexpr int kDecoderThresholdMin = 1;
+constexpr int kDecoderThresholdMax = 30;
+
+// Keyboard CW (KY): the radio takes 24 characters per command.
+constexpr int kCwChunkLength = 24;
+// Upper-cases the text and drops anything KY can't send (';' included).
+QByteArray cwText(QStringView text);
+// Splits cwText output into KY-sized pieces, breaking between words where it
+// can. The radio doesn't key the padding spaces at the end of a command, so
+// a word gap that falls on a boundary starts the next piece instead.
+QList<QByteArray> splitCwText(const QByteArray &text);
 
 // Transmit audio filters, set through EX menus as an index into a table.
 enum class TxFilter : int { SsbLowCut = 0, SsbHighCut = 1, SsbDataLowCut = 2, SsbDataHighCut = 3 };
@@ -258,6 +291,14 @@ QByteArray agc(Agc agc);                         // GC
 // then); it returns to whichever of slow/fast was active before.
 QByteArray agcResume();
 QByteArray agcTimeConstant(int value);           // GT
+QByteArray beatCancel(BeatCancel bc);            // BC
+QByteArray keyerSpeed(int wpm);                  // KS
+QByteArray breakInDelay(int ms);                 // SD, rounded down to 50 ms
+QByteArray cwTune(bool on);                      // CA
+QByteArray sendCw(QByteArrayView chunk);         // KY, one splitCwText piece
+QByteArray stopCw();                             // KY0: abandons what's buffered
+QByteArray morseDecoder(bool on);                // CD0
+QByteArray decoderThreshold(int level);          // CD1
 QByteArray nbLevel(int level);                   // NL
 QByteArray noiseReduction(NoiseReduction nr);    // NR
 QByteArray nrLevel(NoiseReduction nr, int level);   // RL, clamped for nr

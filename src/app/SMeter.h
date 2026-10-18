@@ -15,6 +15,8 @@
 // as three thin lines underneath, in the same footprint. The readout shows
 // peak watts; SWR is shown beside its label and COMP (1 dB per dot) at the
 // right end of its line.
+//
+// A green "SQL" sits over the readout while the squelch is set and open.
 class SMeter : public QWidget
 {
     Q_OBJECT
@@ -28,6 +30,8 @@ public:
     void setTxMeters(int swr, int comp, int alc);   // dots, 0..30
     // RF gain setting (0..255), shown as a yellow marker on receive.
     void setRfGain(int level);
+    // Green "SQL" over the readout: the squelch is set and open.
+    void setSquelchOpen(bool open);
     void reset();
 
     QSize sizeHint() const override;
@@ -53,4 +57,5 @@ private:
     bool m_transmitting = false;
     int m_txMeters[3] = {};   // SWR, COMP, ALC
     int m_rfGain = 255;
+    bool m_squelchOpen = false;
 };

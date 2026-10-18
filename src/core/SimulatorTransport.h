@@ -5,6 +5,7 @@
 
 #include <QElapsedTimer>
 #include <QHash>
+#include <QTimer>
 
 namespace ts590 {
 
@@ -51,6 +52,14 @@ public:
     int processorInput() const { return m_processorInput; }
     int processorOutput() const { return m_processorOutput; }
     int agcTime(int agc) const { return m_agcTimes[agc]; }
+    int beatCancel() const { return m_beatCancel; }
+    int keyerSpeed() const { return m_keyerSpeed; }
+    int breakInDelay() const { return m_breakInDelay; }
+    bool morseDecoder() const { return m_decoder; }
+    int decoderThreshold() const { return m_decoderThreshold; }
+    QByteArray keyedCw() const { return m_keyedCw; }   // everything KY has sent, padding dropped
+    void setSMeter(int dots) { m_sMeter = dots; }
+    void setSquelchLevel(int level) { m_squelch = level; }
     int nbLevel(int blanker) const { return m_nbLevels[blanker]; }
     int noiseReduction() const { return m_noiseReduction; }
     int nrLevel(int reduction) const { return m_nrLevels[reduction]; }
@@ -79,6 +88,7 @@ private:
     QByteArray answerFor(QByteArrayView name) const;
     EqMode currentEqMode() const { return eqModeFor(m_mode, m_data); }
     FilterLayout currentFilters() const;
+    bool busy() const;
 
     bool m_open = false;
     bool m_unresponsive = false;
@@ -129,6 +139,15 @@ private:
     int m_band = 4;                  // 14 MHz, matching m_freqA
     qint64 m_bandMemory[11] = {1'840'000, 3'573'000, 7'074'000, 10'136'000, 14'195'000, 18'100'000,
                                21'074'000, 24'915'000, 28'074'000, 50'313'000, 5'000'000};
+    int m_beatCancel = 0;
+    int m_keyerSpeed = 20;
+    int m_breakInDelay = 300;
+    bool m_cwTune = false;
+    QByteArray m_keyedCw;
+    bool m_decoder = false;
+    int m_decoderThreshold = 10;
+    QTimer m_decoderTimer;   // streams canned CD2 characters while the decoder is on
+    int m_decoderPos = 0;
     int m_agc = 1;
     int m_agcBeforeOff = 1;
     int m_agcTimes[3] = {0, 12, 4};   // [1] slow, [2] fast

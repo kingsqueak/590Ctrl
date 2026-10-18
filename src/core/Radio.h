@@ -93,6 +93,15 @@ public:
     std::optional<int> processorOutput() const { return m_processorOutput; }
     Agc agc() const { return m_agc; }
     std::optional<int> agcTimeConstant() const { return m_agcTime; }   // of the active AGC mode
+    BeatCancel beatCancel() const { return m_beatCancel; }
+    bool busy() const { return m_busy; }   // squelch open (BY)
+    std::optional<int> keyerSpeed() const { return m_keyerSpeed; }       // WPM
+    std::optional<int> breakInDelay() const { return m_breakInDelay; }   // ms, 0 = full break-in
+    std::optional<int> cwPitch() const { return m_cwPitch; }             // menu index, see cwPitchHz()
+    bool cwTune() const { return m_cwTune; }
+    bool morseDecoder() const { return m_morseDecoder; }   // TS-590SG only
+    std::optional<int> decoderThreshold() const { return m_decoderThreshold; }
+    int cwQueued() const { return int(m_cwQueue.size()); }   // KY pieces not yet sent
 
     FilterSlot filterSlot() const { return m_filterSlot; }
     FilterLayout filterLayout() const;
@@ -152,6 +161,19 @@ public:
     // BD: jump to a band (or step its band memories if already there).
     void selectBand(int band);
     void setAgcTimeConstant(int value);
+    void setBeatCancel(BeatCancel bc);
+    void setKeyerSpeed(int wpm);
+    void setBreakInDelay(int ms);
+    void setCwPitch(int index);
+    // CA: auto-zero onto the CW signal being received (CW modes only).
+    void setCwTune(bool on);
+    void setMorseDecoder(bool on);
+    void setDecoderThreshold(int level);
+    // KY: keys the text in CW mode (transmitting if break-in is on). Text is
+    // queued and fed to the radio as its buffer frees up.
+    void sendCw(const QString &text);
+    // Drops the queue and whatever the radio still has buffered.
+    void stopCw();
     void setFilterSlot(FilterSlot slot);
     void setFilterValue(FilterCommand command, int raw);
     // Selects the curve for the current mode family.
@@ -196,6 +218,12 @@ signals:
     void noiseReductionChanged();    // selection or level
     void agcChanged();               // mode or time constant
     void processorChanged();         // on/off or levels
+    void beatCancelChanged();
+    void busyChanged(bool busy);
+    void keyerChanged();             // speed, break-in delay, pitch or CW TUNE
+    void morseDecoderChanged();      // on/off or threshold
+    void morseDecoded(const QString &text);
+    void cwQueueChanged(int pieces);
     void sMeterChanged(int dots);
     void transmitChanged(bool transmitting);
     void txMetersChanged();
@@ -215,11 +243,12 @@ private:
     void requestModeDependentState();
     void requestFilterValues();
     void applyMode(Mode mode, std::optional<bool> data);
-    void setMenuValue(int menu, std::optional<int> &field, int value, int maximum);
+    void setMenuValue(int menu, std::optional<int> &field, int value, int maximum, int width = 1);
     void requestVfoState();
     void setPower(QByteArray (*encode)(int), std::optional<int> &field, int watts, int maximum);
     void setLevel(QByteArray (*encode)(int), std::optional<int> &field, int level, int maximum);
     void pollMeter();
+    void pumpCw();
     void teardown();
     void resetRadioState();
     void enterPoweredOff();
@@ -294,6 +323,17 @@ private:
     std::optional<int> m_processorOutput;
     Agc m_agc = Agc::Off;
     std::optional<int> m_agcTime;
+    BeatCancel m_beatCancel = BeatCancel::Off;
+    bool m_busy = false;
+    std::optional<int> m_keyerSpeed;
+    std::optional<int> m_breakInDelay;
+    std::optional<int> m_cwPitch;
+    bool m_cwTune = false;
+    bool m_morseDecoder = false;
+    std::optional<int> m_decoderThreshold;
+    QList<QByteArray> m_cwQueue;
+    bool m_cwAwaitingBuffer = false;   // a KY read is out to check for buffer space
+    QTimer m_cwTimer;                  // retries while the radio's buffer is full
 
     FilterSlot m_filterSlot = FilterSlot::A;
     bool m_ssbWidthShift = false;       // EX028

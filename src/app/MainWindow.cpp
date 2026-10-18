@@ -17,14 +17,17 @@
 #include <QCloseEvent>
 #include <QComboBox>
 #include <QDockWidget>
+#include <QFontDatabase>
 #include <QFormLayout>
 #include <QFrame>
 #include <QGridLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QRadioButton>
 #include <QSettings>
@@ -118,6 +121,7 @@ MainWindow::MainWindow(QWidget *parent)
     tabs->addTab(createOperatePage(), tr("Operate"));
     tabs->addTab(createEqualizerPage(), tr("Equalizer"));
     tabs->addTab(createBandsPage(), tr("Bands"));
+    tabs->addTab(createCwPage(), tr("CW"));
 
     auto *central = new QWidget;
     auto *layout = new QVBoxLayout(central);
@@ -176,6 +180,7 @@ MainWindow::MainWindow(QWidget *parent)
         // TX Tune power (TP) only exists on the SG.
         m_transmitForm->setRowVisible(1, model == kModelTs590SG);
         m_monitorSlider->setMaximum(txMonitorMax(model));
+        m_decoderGroup->setVisible(model == kModelTs590SG);   // the S has no decoder
         m_radioInfo->setText(tr("%1 · firmware %2 · %3")
                                  .arg(name, firmware, m_radio.link()->transport()->description()));
     });
@@ -205,6 +210,18 @@ MainWindow::MainWindow(QWidget *parent)
         }
     });
     connect(&m_radio, &Radio::voxChanged, m_voxButton, &QPushButton::setChecked);
+    connect(&m_radio, &Radio::voxChanged, m_breakInButton, &QPushButton::setChecked);
+    connect(&m_radio, &Radio::beatCancelChanged, this, &MainWindow::refreshBeatCancel);
+    connect(&m_radio, &Radio::busyChanged, this, &MainWindow::refreshSquelchOpen);
+    connect(m_sqlSlider, &QSlider::valueChanged, this, &MainWindow::refreshSquelchOpen);
+    connect(&m_radio, &Radio::keyerChanged, this, &MainWindow::refreshKeyer);
+    connect(&m_radio, &Radio::cwQueueChanged, this, &MainWindow::refreshKeyer);
+    connect(&m_radio, &Radio::morseDecoderChanged, this, &MainWindow::refreshDecoder);
+    connect(&m_radio, &Radio::morseDecoded, this, [this](const QString &text) {
+        m_decoderText->moveCursor(QTextCursor::End);
+        m_decoderText->insertPlainText(text);
+        m_decoderText->ensureCursorVisible();
+    });
     connect(&m_radio, &Radio::antennaChanged, this, &MainWindow::refreshAntenna);
     connect(&m_radio, &Radio::attenuatorChanged, this, &MainWindow::refreshFrontEnd);
     connect(&m_radio, &Radio::preampChanged, this, &MainWindow::refreshFrontEnd);
@@ -728,6 +745,17 @@ QWidget *MainWindow::createTxFilterGroup()
 
 QWidget *MainWindow::createNotchGroup()
 {
+    m_beatCancelButton = new QPushButton(tr("BC"));
+    m_beatCancelButton->setCheckable(true);
+    m_beatCancelButton->setToolTip(tr("Beat cancel: OFF → BC1 → BC2 → OFF. BC1 removes a steady beat, "
+                                      "BC2 several or keyed ones. Not in CW or FSK."));
+    connect(m_beatCancelButton, &QPushButton::clicked, this, [this] {
+        static constexpr BeatCancel next[] = {BeatCancel::BC1, BeatCancel::BC2, BeatCancel::Off};
+        m_radio.setBeatCancel(next[int(m_radio.beatCancel())]);
+        refreshBeatCancel();   // undo the button's own toggle until the radio answers
+    });
+    m_radioControls << m_beatCancelButton;
+
     m_autoNotchButton = new QPushButton(tr("AUTO"));
     m_autoNotchButton->setCheckable(true);
     m_autoNotchButton->setToolTip(tr("Auto notch: tracks and removes a carrier"));
@@ -758,15 +786,16 @@ QWidget *MainWindow::createNotchGroup()
     value->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     connect(m_notchSlider, &QSlider::valueChanged, value, qOverload<int>(&QLabel::setNum));
 
-    auto *group = new QGroupBox(tr("Notch"));
+    auto *group = new QGroupBox(tr("Beat Cancel / Notch"));
     auto *layout = new QGridLayout(group);
-    layout->addWidget(m_autoNotchButton, 0, 0);
-    layout->addWidget(m_manualNotchButton, 0, 1);
-    layout->addWidget(m_notchWideCheck, 0, 2);
+    layout->addWidget(m_beatCancelButton, 0, 0);
+    layout->addWidget(m_autoNotchButton, 0, 1);
+    layout->addWidget(m_manualNotchButton, 0, 2);
+    layout->addWidget(m_notchWideCheck, 0, 3);
     auto *row = new QHBoxLayout;
     row->addWidget(m_notchSlider, 1);
     row->addWidget(value);
-    layout->addLayout(row, 1, 0, 1, 3);
+    layout->addLayout(row, 1, 0, 1, 4);
     return group;
 }
 
@@ -1012,6 +1041,148 @@ QWidget *MainWindow::createBandsPage()
     return page;
 }
 
+QWidget *MainWindow::createCwPage()
+{
+    // Each slider gets a readout at its right, all the same width.
+    const int valueWidth = fontMetrics().horizontalAdvance(QStringLiteral("1000 ms")) + 6;
+    auto sliderRow = [valueWidth](QSlider *slider, QLabel *value) {
+        value->setFixedWidth(valueWidth);
+        value->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        auto *row = new QHBoxLayout;
+        row->addWidget(slider, 1);
+        row->addWidget(value);
+        return row;
+    };
+
+    m_keyerSpeedSlider = createLevelSlider(&Radio::setKeyerSpeed, kKeyerSpeedMax);
+    m_keyerSpeedSlider->setMinimum(kKeyerSpeedMin);
+    m_keyerSpeedSlider->setPageStep(5);
+    m_keyerSpeedSlider->setToolTip(tr("Electronic keyer speed (also used for keyboard CW)"));
+    auto *speedValue = new QLabel;
+    connect(m_keyerSpeedSlider, &QSlider::valueChanged, speedValue,
+            [speedValue](int wpm) { speedValue->setText(tr("%1 WPM").arg(wpm)); });
+
+    m_pitchSlider = createLevelSlider(&Radio::setCwPitch, kCwPitchIndexMax);
+    m_pitchSlider->setToolTip(tr("CW pitch and sidetone frequency (a menu setting)"));
+    auto *pitchValue = new QLabel;
+    connect(m_pitchSlider, &QSlider::valueChanged, pitchValue,
+            [pitchValue](int index) { pitchValue->setText(tr("%1 Hz").arg(cwPitchHz(index))); });
+
+    m_breakInButton = new QPushButton(tr("BREAK-IN"));
+    m_breakInButton->setCheckable(true);
+    m_breakInButton->setToolTip(tr("Break-in: keying transmits (the VOX key in CW)"));
+    connect(m_breakInButton, &QPushButton::clicked, &m_radio, &Radio::setVox);
+    m_radioControls << m_breakInButton;
+    m_breakInDelaySlider = new QSlider(Qt::Horizontal);
+    m_breakInDelaySlider->setRange(0, kBreakInDelayMax / kBreakInDelayStep);
+    m_breakInDelaySlider->setPageStep(2);
+    m_breakInDelaySlider->setToolTip(tr("Break-in delay: how long the transmitter stays keyed after the "
+                                        "last element. FULL is full break-in (QSK)."));
+    connect(m_breakInDelaySlider, &QSlider::valueChanged, this, [this](int steps) {
+        if (!m_applyingRadioState)
+            m_radio.setBreakInDelay(steps * kBreakInDelayStep);
+    });
+    m_radioControls << m_breakInDelaySlider;
+    auto *delayValue = new QLabel;
+    connect(m_breakInDelaySlider, &QSlider::valueChanged, delayValue, [delayValue](int steps) {
+        delayValue->setText(steps == 0 ? tr("FULL") : tr("%1 ms").arg(steps * kBreakInDelayStep));
+    });
+
+    m_cwTuneButton = new QPushButton(tr("CW TUNE"));
+    m_cwTuneButton->setCheckable(true);
+    m_cwTuneButton->setToolTip(tr("Zero in on the CW signal being received (CW mode only)"));
+    connect(m_cwTuneButton, &QPushButton::clicked, this, [this](bool on) {
+        m_radio.setCwTune(on);
+        refreshKeyer();   // lit only once the radio reports it's tuning
+    });
+
+    auto *keyer = new QGroupBox(tr("Keyer"));
+    auto *keyerForm = new QFormLayout(keyer);
+    alignForm(keyerForm);
+    keyerForm->addRow(tr("Speed"), sliderRow(m_keyerSpeedSlider, speedValue));
+    keyerForm->addRow(tr("Pitch"), sliderRow(m_pitchSlider, pitchValue));
+    keyerForm->addRow(m_breakInButton, sliderRow(m_breakInDelaySlider, delayValue));
+    auto *tuneRow = new QHBoxLayout;
+    tuneRow->addWidget(m_cwTuneButton);
+    tuneRow->addStretch();
+    keyerForm->addRow(tuneRow);
+
+    // Keyboard CW: Enter (or SEND) queues the line; the radio keys it at the
+    // keyer speed, transmitting if break-in is on.
+    m_cwEdit = new QLineEdit;
+    m_cwEdit->setPlaceholderText(tr("Type text and press Enter to send it"));
+    m_cwEdit->setToolTip(tr("Letters, digits and . , / ? = : ' \" ( ) * + - @. "
+                            "Prosigns: [ BT, ] KN, < AS, > SK, _ AR, \\ BK, # HH, % SN."));
+    m_radioControls << m_cwEdit;
+    m_cwSendButton = new QPushButton(tr("SEND"));
+    m_cwSendButton->setToolTip(tr("Key the text (CW mode only)"));
+    auto send = [this] {
+        if (m_cwEdit->text().trimmed().isEmpty() || !m_cwSendButton->isEnabled())
+            return;
+        m_radio.sendCw(m_cwEdit->text());
+        m_cwEdit->clear();
+    };
+    connect(m_cwSendButton, &QPushButton::clicked, this, send);
+    connect(m_cwEdit, &QLineEdit::returnPressed, this, send);
+    m_cwStopButton = new QPushButton(tr("STOP"));
+    m_cwStopButton->setToolTip(tr("Stop sending and drop any text not yet keyed"));
+    connect(m_cwStopButton, &QPushButton::clicked, &m_radio, &Radio::stopCw);
+    m_cwQueueLabel = new QLabel;
+    m_cwQueueLabel->setForegroundRole(QPalette::PlaceholderText);
+
+    auto *sendGroup = new QGroupBox(tr("Keyboard CW"));
+    auto *sendLayout = new QGridLayout(sendGroup);
+    sendLayout->addWidget(m_cwEdit, 0, 0, 1, 3);
+    sendLayout->addWidget(m_cwQueueLabel, 1, 0);
+    sendLayout->addWidget(m_cwSendButton, 1, 1);
+    sendLayout->addWidget(m_cwStopButton, 1, 2);
+    sendLayout->setColumnStretch(0, 1);
+
+    // Morse decoder (TS-590SG): the radio streams what it decodes.
+    m_decoderButton = new QPushButton(tr("DECODE"));
+    m_decoderButton->setCheckable(true);
+    m_decoderButton->setToolTip(tr("The radio's Morse decoder (CW mode)"));
+    connect(m_decoderButton, &QPushButton::clicked, this, [this](bool on) {
+        m_radio.setMorseDecoder(on);
+        refreshDecoder();
+    });
+    m_radioControls << m_decoderButton;
+    m_decoderSlider = createLevelSlider(&Radio::setDecoderThreshold, kDecoderThresholdMax);
+    m_decoderSlider->setMinimum(kDecoderThresholdMin);
+    m_decoderSlider->setPageStep(3);
+    m_decoderSlider->setToolTip(tr("Decoder threshold: raise it if noise decodes as characters"));
+    auto *thresholdValue = new QLabel;
+    connect(m_decoderSlider, &QSlider::valueChanged, thresholdValue, qOverload<int>(&QLabel::setNum));
+    m_decoderText = new QPlainTextEdit;
+    m_decoderText->setReadOnly(true);
+    m_decoderText->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
+    m_decoderText->setMaximumBlockCount(500);
+    m_decoderText->setPlaceholderText(tr("Decoded text appears here"));
+    auto *clearButton = new QPushButton(tr("Clear"));
+    connect(clearButton, &QPushButton::clicked, m_decoderText, &QPlainTextEdit::clear);
+
+    m_decoderGroup = new QGroupBox(tr("Morse Decoder"));
+    auto *decoderLayout = new QVBoxLayout(m_decoderGroup);
+    auto *decoderRow = new QHBoxLayout;
+    decoderRow->addWidget(m_decoderButton);
+    decoderRow->addWidget(new QLabel(tr("Threshold")));
+    decoderRow->addLayout(sliderRow(m_decoderSlider, thresholdValue), 1);
+    decoderRow->addWidget(clearButton);
+    decoderLayout->addLayout(decoderRow);
+    decoderLayout->addWidget(m_decoderText, 1);
+
+    auto *left = new QVBoxLayout;
+    left->addWidget(keyer);
+    left->addWidget(sendGroup);
+    left->addStretch();
+
+    auto *page = new QWidget;
+    auto *layout = new QHBoxLayout(page);
+    layout->addLayout(left, 1);
+    layout->addWidget(m_decoderGroup, 1);
+    return page;
+}
+
 QWidget *MainWindow::createEqualizerPage()
 {
     m_rxEq = new EqualizerPanel(EqType::Rx, &m_eqPresets);
@@ -1129,6 +1300,10 @@ void MainWindow::onStateChanged(Radio::State state)
         refreshFrontEnd();
         refreshBand();
         refreshProcessor();
+        refreshBeatCancel();
+        refreshSquelchOpen();
+        refreshKeyer();
+        refreshDecoder();
         break;
     case Radio::State::Connecting: m_radioInfo->setText(tr("Connecting…")); break;
     case Radio::State::Connected:
@@ -1145,6 +1320,10 @@ void MainWindow::onStateChanged(Radio::State state)
         refreshFrontEnd();
         refreshBand();
         refreshProcessor();
+        refreshBeatCancel();
+        refreshSquelchOpen();
+        refreshKeyer();
+        refreshDecoder();
         break;
     }
 }
@@ -1176,6 +1355,8 @@ void MainWindow::onModeChanged(Mode mode, bool data)
     refreshNotch();
     refreshNoise();
     refreshAgc();
+    refreshBeatCancel();
+    refreshKeyer();
 }
 
 void MainWindow::onVfoSelectionChanged(Vfo rx, Vfo tx)
@@ -1382,6 +1563,60 @@ void MainWindow::refreshProcessor()
         m_processorSlider->setValue(*level);
         m_applyingRadioState = false;
         m_processorValue->setNum(*level);
+    }
+}
+
+void MainWindow::refreshBeatCancel()
+{
+    const bool available = m_radio.state() == Radio::State::Connected && beatCancelSupported(m_radio.mode());
+    const BeatCancel bc = available ? m_radio.beatCancel() : BeatCancel::Off;
+    m_beatCancelButton->setText(beatCancelName(bc));
+    m_beatCancelButton->setChecked(bc != BeatCancel::Off);
+    m_beatCancelButton->setEnabled(available);
+}
+
+void MainWindow::refreshSquelchOpen()
+{
+    // With the squelch at 0 it's always open; only show it when it's doing
+    // something.
+    m_sMeter->setSquelchOpen(m_radio.state() == Radio::State::Connected && m_sqlSlider->value() > 0
+                             && m_radio.busy());
+}
+
+void MainWindow::refreshKeyer()
+{
+    const bool connected = m_radio.state() == Radio::State::Connected;
+    const bool cw = connected && isCwMode(m_radio.mode());
+    m_applyingRadioState = true;
+    if (const auto wpm = m_radio.keyerSpeed(); wpm && !m_keyerSpeedSlider->isSliderDown())
+        m_keyerSpeedSlider->setValue(*wpm);
+    if (const auto ms = m_radio.breakInDelay(); ms && !m_breakInDelaySlider->isSliderDown())
+        m_breakInDelaySlider->setValue(*ms / kBreakInDelayStep);
+    if (const auto index = m_radio.cwPitch(); index && !m_pitchSlider->isSliderDown())
+        m_pitchSlider->setValue(*index);
+    m_applyingRadioState = false;
+    m_breakInButton->setChecked(connected && m_radio.vox());
+
+    m_cwTuneButton->setChecked(connected && m_radio.cwTune());
+    m_cwTuneButton->setEnabled(cw);
+    m_cwSendButton->setEnabled(cw);
+    const int queued = connected ? m_radio.cwQueued() : 0;
+    m_cwStopButton->setEnabled(cw);
+    m_cwQueueLabel->setText(queued > 0             ? tr("Sending…")
+                            : connected && !cw ? tr("Switch to CW or CW-R to send")
+                                               : QString());
+}
+
+void MainWindow::refreshDecoder()
+{
+    const bool connected = m_radio.state() == Radio::State::Connected;
+    const bool on = connected && m_radio.morseDecoder();
+    m_decoderButton->setChecked(on);
+    m_decoderSlider->setEnabled(on);
+    if (const auto level = m_radio.decoderThreshold(); level && !m_decoderSlider->isSliderDown()) {
+        m_applyingRadioState = true;
+        m_decoderSlider->setValue(*level);
+        m_applyingRadioState = false;
     }
 }
 

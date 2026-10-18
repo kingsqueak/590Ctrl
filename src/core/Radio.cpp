@@ -15,6 +15,8 @@ constexpr int kBootPollMs = 1000;
 constexpr int kBootAttempts = 15;
 // Wake-up from panel-off: ";" then PS1 within 2 s, at least 200 ms apart.
 constexpr int kWakeDelayMs = 300;
+// While keyboard CW is queued, how often to ask whether the radio has room.
+constexpr int kCwPollMs = 300;
 // Auto Information level used while connected: on, not persisted, so the
 // radio drops back to its own setting if the app dies without cleaning up.
 constexpr int kAutoInfoLevel = 2;
@@ -42,6 +44,9 @@ Radio::Radio(QObject *parent)
     connect(&m_meterTimer, &QTimer::timeout, this, &Radio::pollMeter);
     m_bootTimer.setInterval(kBootPollMs);
     connect(&m_bootTimer, &QTimer::timeout, this, &Radio::bootTick);
+    m_cwTimer.setSingleShot(true);
+    m_cwTimer.setInterval(kCwPollMs);
+    connect(&m_cwTimer, &QTimer::timeout, this, &Radio::pumpCw);
     // Each transmission starts its SWR/COMP/ALC readings from zero.
     connect(this, &Radio::transmitChanged, this, [this](bool transmitting) {
         if (transmitting && (m_txMeters[0] || m_txMeters[1] || m_txMeters[2])) {
@@ -208,6 +213,17 @@ void Radio::resetRadioState()
     m_processor = false;
     m_processorInput.reset();
     m_processorOutput.reset();
+    m_beatCancel = BeatCancel::Off;
+    m_busy = false;
+    m_keyerSpeed.reset();
+    m_breakInDelay.reset();
+    m_cwPitch.reset();
+    m_cwTune = false;
+    m_morseDecoder = false;
+    m_decoderThreshold.reset();
+    m_cwQueue.clear();
+    m_cwAwaitingBuffer = false;
+    m_cwTimer.stop();
     for (auto &perType : m_eqCurves) {
         for (auto &curve : perType)
             curve.reset();
@@ -245,16 +261,20 @@ void Radio::requestFullState()
     const MenuNumbers menus = menuNumbersFor(m_modelId);
     // Filter knob meaning depends on these, so read them before the mode.
     for (int menu :
-         {menus.ssbFilterMode, menus.ssbDataFilterMode, menus.usbAudioIn, menus.usbAudioOut, menus.powerFine}) {
+         {menus.ssbFilterMode, menus.ssbDataFilterMode, menus.usbAudioIn, menus.usbAudioOut, menus.powerFine,
+          menus.cwPitch}) {
         if (menu >= 0)
             m_link.query(cmd::readMenu(menu));
     }
     for (int menu : menus.txFilter)
         m_link.query(cmd::readMenu(menu));
-    for (const char *read : {"FA;", "FB;", "FR;", "FT;", "IF;", "RT;", "XT;", "DA;", "AG0;", "SQ0;", "RG;", "PC;", "NT;", "BP;", "NB;", "NR;", "CG;", "MG;", "ML;", "VX;", "VG;", "AN;", "RA;", "PA;", "AC;", "PR;", "PL;"})
+    for (const char *read : {"FA;", "FB;", "FR;", "FT;", "IF;", "RT;", "XT;", "DA;", "AG0;", "SQ0;", "RG;", "PC;", "NT;", "BP;", "NB;", "NR;", "CG;", "MG;", "ML;", "VX;", "VG;", "AN;", "RA;", "PA;", "AC;", "PR;", "PL;", "BC;", "KS;", "SD;", "CA;"})
         m_link.query(read);
-    if (m_modelId == kModelTs590SG)
+    if (m_modelId == kModelTs590SG) {
         m_link.query("TP;");
+        m_link.query("CD0;");
+        m_link.query("CD1;");
+    }
     // MD's answer sets the mode, which pulls everything mode-dependent.
     m_link.query("MD;");
 }
@@ -299,6 +319,17 @@ void Radio::pollMeter()
     // SWR/COMP/ALC only mean something on transmit; one RM read returns all three.
     if (m_transmitting)
         m_link.query("RM;");
+    else
+        m_link.query("BY;");   // squelch open; AI doesn't report it
+}
+
+void Radio::pumpCw()
+{
+    if (m_cwQueue.isEmpty() || m_cwAwaitingBuffer || m_state != State::Connected)
+        return;
+    // Ask for buffer space first; the KY answer sends the next piece.
+    m_cwAwaitingBuffer = true;
+    m_link.query("KY;");
 }
 
 // ------------------------------------------------------------------- answers
@@ -440,6 +471,55 @@ void Radio::handleFrame(const QByteArray &frame)
             m_processorOutput = *output;
             emit processorChanged();
         }
+    } else if (name == "BC" && frame.size() == 3) {
+        const int value = frame[2] - '0';
+        if (value >= 0 && value <= 2 && BeatCancel(value) != m_beatCancel) {
+            m_beatCancel = BeatCancel(value);
+            emit beatCancelChanged();
+        }
+    } else if (name == "BY" && frame.size() >= 3) {
+        update(m_busy, frame[2] == '1', &Radio::busyChanged);
+    } else if ((name == "KS" && frame.size() == 5) || (name == "SD" && frame.size() == 6)) {
+        const auto value = numberAt(frame, 2);
+        std::optional<int> &field = name == "KS" ? m_keyerSpeed : m_breakInDelay;
+        if (value && field != *value) {
+            field = *value;
+            emit keyerChanged();
+        }
+    } else if (name == "CA" && frame.size() == 3) {
+        if (m_cwTune != (frame[2] == '1')) {
+            m_cwTune = frame[2] == '1';
+            emit keyerChanged();
+        }
+    } else if (name == "KY" && frame.size() == 3) {
+        // P1 = 0: the radio has room for another piece.
+        if (!m_cwAwaitingBuffer)
+            return;
+        m_cwAwaitingBuffer = false;
+        if (frame[2] == '0' && !m_cwQueue.isEmpty()) {
+            m_link.send(cmd::sendCw(m_cwQueue.takeFirst()));
+            emit cwQueueChanged(cwQueued());
+        }
+        if (!m_cwQueue.isEmpty())
+            m_cwTimer.start();
+    } else if (name == "CD" && frame.size() == 4 && frame[2] == '0') {
+        // The reference guide shows "CG0P1"; the radio really answers "CD0P1".
+        if (m_morseDecoder != (frame[3] == '1')) {
+            m_morseDecoder = frame[3] == '1';
+            emit morseDecoderChanged();
+        }
+    } else if (name == "CD" && frame.size() == 6 && frame[2] == '1') {
+        if (const auto level = numberAt(frame, 3); level && m_decoderThreshold != *level) {
+            m_decoderThreshold = *level;
+            emit morseDecoderChanged();
+        }
+    } else if (name == "CD" && frame.size() > 3 && frame[2] == '2') {
+        // One character, or two for an abbreviation; a single one is padded
+        // with a space (and a decoded word gap is a lone space).
+        QByteArray text = frame.sliced(3);
+        if (text.size() == 2 && text[1] == ' ')
+            text.chop(1);
+        emit morseDecoded(QString::fromLatin1(text));
     } else if (name == "GC" && frame.size() == 3) {
         const int value = frame[2] - '0';
         if (value < 0 || value > 2)
@@ -583,6 +663,11 @@ void Radio::handleFrame(const QByteArray &frame)
                 field = int(*value);
                 emit txFilterChanged(filter);
             }
+        } else if (menu->number == menus.cwPitch) {
+            if (m_cwPitch != int(*value)) {
+                m_cwPitch = int(*value);
+                emit keyerChanged();
+            }
         } else if (menu->number == menus.powerFine) {
             update(m_powerFine, *value == 1, &Radio::powerFineChanged);
         } else if (menu->number == menus.ssbFilterMode || menu->number == menus.ssbDataFilterMode) {
@@ -658,9 +743,27 @@ void Radio::handleRejected(const QByteArray &command, char code)
         emit transmitChanged(false);
         return;
     }
-    // AGC reads are refused in FM / with AGC off; that's expected, not an error.
-    if (command == "GC;" || command == "GT;")
+    // AGC reads are refused in FM / with AGC off, and some others depend on
+    // the mode too; that's expected, not an error.
+    if (command == "GC;" || command == "GT;" || command == "BC;" || command == "CA;" || command == "BY;"
+        || command == "CD0;" || command == "CD1;")
         return;
+    if (command == "KY;") {
+        m_cwAwaitingBuffer = false;
+        m_cwTimer.start();
+        return;
+    }
+    if (command.startsWith("KY ")) {
+        m_cwQueue.clear();
+        emit cwQueueChanged(0);
+        emit message(tr("The radio rejected the CW text (keyboard CW works in CW mode only)."));
+        return;
+    }
+    if (command == cmd::cwTune(true)) {
+        emit message(tr("The radio refused CW TUNE (CW mode only)."));
+        m_link.query("CA;");
+        return;
+    }
     if (command == cmd::startTuning()) {
         emit message(tr("The radio refused to start tuning (the tuner may not cover this band)."));
         m_link.query("AC;");
@@ -687,7 +790,13 @@ void Radio::handleTimeout(const QByteArray &command)
         teardown();
         return;
     }
-    if (command != "SM0;" && command != "RM;")   // meter polls: next poll will do
+    if (command == "KY;") {   // try again shortly
+        m_cwAwaitingBuffer = false;
+        m_cwTimer.start();
+        return;
+    }
+    // Meter and busy polls: the next poll will do.
+    if (command != "SM0;" && command != "RM;" && command != "BY;")
         emit message(tr("Radio did not answer %1").arg(QString::fromLatin1(command)));
 }
 
@@ -739,14 +848,14 @@ void Radio::copyVfo()
     m_link.query("DA;");
 }
 
-void Radio::setMenuValue(int menu, std::optional<int> &field, int value, int maximum)
+void Radio::setMenuValue(int menu, std::optional<int> &field, int value, int maximum, int width)
 {
     if (menu < 0)
         return;
     value = std::clamp(value, 0, maximum);
     field = value;
     const QByteArray read = cmd::readMenu(menu);
-    m_link.send(cmd::setMenu(menu, QByteArray::number(value)), read.chopped(1));
+    m_link.send(cmd::setMenu(menu, QByteArray::number(value).rightJustified(width, '0')), read.chopped(1));
     // EX sets don't reliably echo; read back so the UI tracks the radio.
     m_link.query(read);
 }
@@ -887,6 +996,86 @@ void Radio::setAgc(Agc agc)
         m_link.send(cmd::agcResume());
     m_link.send(cmd::agc(agc), "GC");
     m_link.query("GC;");
+}
+
+void Radio::setBeatCancel(BeatCancel bc)
+{
+    if (!beatCancelSupported(m_mode))
+        return;
+    m_link.send(cmd::beatCancel(bc), "BC");
+    m_link.query("BC;");
+}
+
+void Radio::setKeyerSpeed(int wpm)
+{
+    m_keyerSpeed = std::clamp(wpm, kKeyerSpeedMin, kKeyerSpeedMax);
+    m_link.send(cmd::keyerSpeed(*m_keyerSpeed), "KS");
+    m_link.query("KS;");
+}
+
+void Radio::setBreakInDelay(int ms)
+{
+    ms = std::clamp(ms, 0, kBreakInDelayMax);
+    m_breakInDelay = ms - ms % kBreakInDelayStep;
+    m_link.send(cmd::breakInDelay(*m_breakInDelay), "SD");
+    m_link.query("SD;");
+}
+
+void Radio::setCwPitch(int index)
+{
+    // A two-digit value, as for the other menus that go past 9.
+    setMenuValue(menuNumbersFor(m_modelId).cwPitch, m_cwPitch, index, kCwPitchIndexMax, 2);
+}
+
+void Radio::setCwTune(bool on)
+{
+    if (on && !isCwMode(m_mode))
+        return;
+    m_link.send(cmd::cwTune(on), "CA");
+    m_link.query("CA;");
+}
+
+void Radio::setMorseDecoder(bool on)
+{
+    if (m_modelId != kModelTs590SG)
+        return;
+    m_link.send(cmd::morseDecoder(on), "CD0");
+    m_link.query("CD0;");
+}
+
+void Radio::setDecoderThreshold(int level)
+{
+    if (m_modelId != kModelTs590SG)
+        return;
+    m_decoderThreshold = std::clamp(level, kDecoderThresholdMin, kDecoderThresholdMax);
+    m_link.send(cmd::decoderThreshold(*m_decoderThreshold), "CD1");
+    m_link.query("CD1;");
+}
+
+void Radio::sendCw(const QString &text)
+{
+    if (m_state != State::Connected)
+        return;
+    if (!isCwMode(m_mode)) {
+        emit message(tr("Keyboard CW works in CW mode only."));
+        return;
+    }
+    // A leading space keeps a word gap between this text and the last.
+    const QList<QByteArray> pieces = splitCwText(' ' + cwText(text).trimmed());
+    if (pieces.isEmpty() || pieces == QList<QByteArray>{" "})
+        return;
+    m_cwQueue += pieces;
+    emit cwQueueChanged(cwQueued());
+    pumpCw();
+}
+
+void Radio::stopCw()
+{
+    m_cwQueue.clear();
+    m_cwTimer.stop();
+    emit cwQueueChanged(0);
+    if (m_state == State::Connected)
+        m_link.send(cmd::stopCw());
 }
 
 void Radio::setAgcTimeConstant(int value)

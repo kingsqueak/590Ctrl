@@ -39,6 +39,16 @@ SimulatorTransport::SimulatorTransport(QObject *parent)
     m_menus[menus.txFilter[1]] = 4;
     m_menus[menus.txFilter[2]] = 1;
     m_menus[menus.txFilter[3]] = 4;
+    m_menus[menus.cwPitch] = 6;   // 600 Hz
+
+    m_decoderTimer.setInterval(150);
+    connect(&m_decoderTimer, &QTimer::timeout, this, [this] {
+        static const QByteArray text = "CQ CQ CQ DE KC2RGW KC2RGW K   ";
+        if (!m_decoder || !isCwMode(m_mode))
+            return;
+        const char c = text[m_decoderPos++ % text.size()];
+        echo("CD2" + QByteArray(1, c) + ' ');
+    });
 }
 
 bool SimulatorTransport::open()
@@ -106,6 +116,12 @@ void SimulatorTransport::echo(const QByteArray &answer)
         reply(answer);
 }
 
+bool SimulatorTransport::busy() const
+{
+    // Squelch 0..255 against the S-meter's 0..30 dots, roughly.
+    return m_sMeter * 255 / kSMeterMaxDots >= m_squelch;
+}
+
 FilterLayout SimulatorTransport::currentFilters() const
 {
     const int menu = m_data ? 29 : 28;
@@ -160,6 +176,18 @@ QByteArray SimulatorTransport::answerFor(QByteArrayView name) const
         return "BP" + digits(m_notchPosition, 3);
     if (name == "PR")
         return m_processor ? "PR1" : "PR0";
+    if (name == "BC")
+        return "BC" + QByteArray::number(m_beatCancel);
+    if (name == "BY")
+        return busy() ? "BY10" : "BY00";
+    if (name == "KS")
+        return "KS" + digits(m_keyerSpeed, 3);
+    if (name == "SD")
+        return "SD" + digits(m_breakInDelay, 4);
+    if (name == "CA")
+        return m_cwTune ? "CA1" : "CA0";
+    if (name == "KY")
+        return "KY0";   // always room
     if (name == "PL")
         return "PL" + digits(m_processorInput, 3) + digits(m_processorOutput, 3);
     if (name == "GC")   // not available in FM
@@ -276,6 +304,36 @@ void SimulatorTransport::handle(const QByteArray &command)
         m_transmitting = true;
         return echo("TX" + (args.isEmpty() ? QByteArray("0") : args.toByteArray()));
     }
+    if (name == "CD") {
+        if (args == "0" || args == "1") {   // reads
+            return reply(args == "0" ? "CD0" + QByteArray(m_decoder ? "1" : "0")
+                                     : "CD1" + digits(m_decoderThreshold, 3));
+        }
+        const auto value = args.size() >= 2 ? number(args.sliced(1)) : std::nullopt;
+        if (!value || (args[0] == '0' && *value > 1) || (args[0] == '1' && args.size() != 4) || args[0] > '1')
+            return reply("?");
+        if (args[0] == '0') {
+            m_decoder = *value == 1;
+            if (m_decoder)
+                m_decoderTimer.start();
+            else
+                m_decoderTimer.stop();
+            return echo("CD0" + QByteArray(m_decoder ? "1" : "0"));
+        }
+        m_decoderThreshold = std::clamp(*value, kDecoderThresholdMin, kDecoderThresholdMax);
+        return echo("CD1" + digits(m_decoderThreshold, 3));
+    }
+    if (name == "KY" && !isRead) {
+        if (args == "0")
+            return;   // stop: nothing is buffered here anyway
+        if (args.size() != 1 + kCwChunkLength || args[0] != ' ' || !isCwMode(m_mode))
+            return reply("?");
+        QByteArray text = args.sliced(1).toByteArray();
+        while (text.endsWith(' '))
+            text.chop(1);
+        m_keyedCw += text;
+        return;
+    }
     if (name == "RX" && isRead) {
         m_transmitting = false;
         return echo("RX");
@@ -385,6 +443,38 @@ void SimulatorTransport::handle(const QByteArray &command)
             return reply("?");
         m_processor = args == "1";
         return echo(answerFor("PR"));
+    }
+    if (name == "BC") {
+        if ((args != "0" && args != "1" && args != "2") || !beatCancelSupported(m_mode))
+            return reply("?");
+        m_beatCancel = args[0] - '0';
+        return echo(answerFor("BC"));
+    }
+    if (name == "KS" || name == "SD") {
+        const auto value = number(args);
+        if (!value || args.size() != (name == "KS" ? 3 : 4))
+            return reply("?");
+        if (name == "KS") {
+            m_keyerSpeed = std::clamp(*value, kKeyerSpeedMin, kKeyerSpeedMax);
+        } else {
+            const int ms = std::min(*value, kBreakInDelayMax);
+            m_breakInDelay = ms - ms % kBreakInDelayStep;
+        }
+        return echo(answerFor(name));
+    }
+    if (name == "CA") {
+        if ((args != "0" && args != "1") || (args == "1" && !isCwMode(m_mode)))
+            return reply("?");
+        m_cwTune = args == "1";
+        echo(answerFor("CA"));
+        if (m_cwTune) {
+            // Zeroes in on the signal, then switches itself off.
+            QTimer::singleShot(400, this, [this] {
+                m_cwTune = false;
+                echo(answerFor("CA"));
+            });
+        }
+        return;
     }
     if (name == "PL") {
         const auto input = args.size() == 6 ? number(args.first(3)) : std::nullopt;

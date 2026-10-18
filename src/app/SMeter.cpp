@@ -174,8 +174,17 @@ void SMeter::setRfGain(int level)
         update();
 }
 
+void SMeter::setSquelchOpen(bool open)
+{
+    if (open == m_squelchOpen)
+        return;
+    m_squelchOpen = open;
+    update();
+}
+
 void SMeter::reset()
 {
+    m_squelchOpen = false;
     m_value = m_peak = 0;
     m_shown = 0;
     m_animation.stop();
@@ -232,6 +241,17 @@ void SMeter::paintEvent(QPaintEvent *)
     p.setPen(colored ? zoneColor(m_peak) : palette().color(QPalette::Text));
     p.drawText(QRect(width() - peakWidth, 0, peakWidth, height()), Qt::AlignRight | Qt::AlignVCenter,
                m_transmitting ? tr("%1 W").arg(txPowerWatts(m_peak)) : sMeterText(m_peak));
+
+    // Squelch open: small green letters in the space above the readout.
+    if (m_squelchOpen && !m_transmitting) {
+        QFont font = m_scaleFont;
+        font.setBold(true);
+        p.setFont(font);
+        p.setPen(kGreen);
+        const int above = (height() - QFontMetrics(m_peakFont).height()) / 2;
+        p.drawText(QRect(width() - peakWidth, 0, peakWidth, std::max(above, QFontMetrics(font).height())),
+                   Qt::AlignRight | Qt::AlignBottom, tr("SQL"));
+    }
 }
 
 void SMeter::paintReceive(QPainter &p, const QRect &area)

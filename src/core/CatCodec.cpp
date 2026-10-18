@@ -81,9 +81,9 @@ MenuNumbers menuNumbersFor(int modelId)
 {
     if (modelId == kModelTs590S) {
         // The S has no HI/LO vs WIDTH/SHIFT menus (SSB is always HI/LO).
-        return {-1, -1, 64, 65, 48, {25, 26, 27, 28}};
+        return {-1, -1, 64, 65, 48, {25, 26, 27, 28}, 34};
     }
-    return {28, 29, 71, 72, 54, {31, 32, 33, 34}};
+    return {28, 29, 71, 72, 54, {31, 32, 33, 34}, 40};
 }
 
 const QList<int> &txFilterValuesHz(TxFilter filter)
@@ -207,6 +207,58 @@ QString agcName(Agc agc)
     case Agc::Off: break;
     }
     return QStringLiteral("AGC");
+}
+
+QString beatCancelName(BeatCancel bc)
+{
+    switch (bc) {
+    case BeatCancel::BC1: return QStringLiteral("BC1");
+    case BeatCancel::BC2: return QStringLiteral("BC2");
+    case BeatCancel::Off: break;
+    }
+    return QStringLiteral("BC");
+}
+
+bool beatCancelSupported(Mode mode)
+{
+    return mode == Mode::LSB || mode == Mode::USB || mode == Mode::AM || mode == Mode::FM;
+}
+
+bool isCwMode(Mode mode)
+{
+    return mode == Mode::CW || mode == Mode::CWR;
+}
+
+QByteArray cwText(QStringView text)
+{
+    // Letters, digits and the punctuation in the KY table; [ ] < > _ \ # %
+    // stand for the prosigns BT, KN, AS, SK, AR, BK, HH and SN.
+    static const QByteArray symbols = " '\"()*+,-./:=?@[]<>_\\#%";
+    QByteArray out;
+    for (QChar c : text) {
+        const char latin = c.toUpper().toLatin1();
+        if ((latin >= 'A' && latin <= 'Z') || (latin >= '0' && latin <= '9') || (latin && symbols.contains(latin)))
+            out += latin;
+    }
+    return out;
+}
+
+QList<QByteArray> splitCwText(const QByteArray &text)
+{
+    QList<QByteArray> pieces;
+    qsizetype start = 0;
+    while (start < text.size()) {
+        qsizetype length = std::min<qsizetype>(kCwChunkLength, text.size() - start);
+        if (start + length < text.size()) {
+            // Break before the last space in range, so it leads the next piece.
+            const qsizetype space = text.lastIndexOf(' ', start + length);
+            if (space > start)
+                length = space - start;
+        }
+        pieces << text.mid(start, length);
+        start += length;
+    }
+    return pieces;
 }
 
 bool noiseBlankerSupported(Mode mode)
@@ -440,6 +492,34 @@ QByteArray agc(Agc agc) { return "GC" + QByteArray::number(int(agc)) + ';'; }
 QByteArray agcResume() { return "GC3;"; }
 
 QByteArray agcTimeConstant(int value) { return "GT" + digits(std::clamp(value, kAgcTimeMin, kAgcTimeMax), 2) + ';'; }
+
+QByteArray beatCancel(BeatCancel bc) { return "BC" + QByteArray::number(int(bc)) + ';'; }
+
+QByteArray keyerSpeed(int wpm) { return "KS" + digits(std::clamp(wpm, kKeyerSpeedMin, kKeyerSpeedMax), 3) + ';'; }
+
+QByteArray breakInDelay(int ms)
+{
+    ms = std::clamp(ms, 0, kBreakInDelayMax);
+    return "SD" + digits(ms - ms % kBreakInDelayStep, 4) + ';';
+}
+
+QByteArray cwTune(bool on) { return on ? "CA1;" : "CA0;"; }
+
+QByteArray sendCw(QByteArrayView chunk)
+{
+    // P1 is always a space; P2 is padded to its fixed 24 characters.
+    const QByteArray text = chunk.first(std::min<qsizetype>(chunk.size(), kCwChunkLength)).toByteArray();
+    return "KY " + text.leftJustified(kCwChunkLength, ' ') + ';';
+}
+
+QByteArray stopCw() { return "KY0;"; }
+
+QByteArray morseDecoder(bool on) { return on ? "CD01;" : "CD00;"; }
+
+QByteArray decoderThreshold(int level)
+{
+    return "CD1" + digits(std::clamp(level, kDecoderThresholdMin, kDecoderThresholdMax), 3) + ';';
+}
 
 QByteArray noiseBlanker(NoiseBlanker nb) { return "NB" + QByteArray::number(int(nb)) + ';'; }
 

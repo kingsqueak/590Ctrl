@@ -1,0 +1,73 @@
+#pragma once
+
+#include "CatCodec.h"
+#include "CatTransport.h"
+
+#include <QHash>
+
+namespace ts590 {
+
+// An in-process stand-in for a TS-590SG covering the commands this app uses.
+// It mirrors behavior observed on real hardware (e.g. a bare ";" answers "?;",
+// UR/UT can be read but not written while the EQ curve is OFF) so the UI and
+// the tests can run without a radio.
+class SimulatorTransport : public CatTransport
+{
+    Q_OBJECT
+
+public:
+    explicit SimulatorTransport(QObject *parent = nullptr);
+
+    bool open() override;
+    void close() override;
+    bool isOpen() const override;
+    void write(const QByteArray &data) override;
+    QString errorString() const override;
+    QString description() const override;
+
+    // Test hooks.
+    QByteArrayList received() const { return m_received; }
+    int menu(int number) const { return m_menus.value(number); }
+    void setMenu(int number, int value) { m_menus[number] = value; }
+    EqLevels eqLevels(EqType type) const { return m_eqLevels[int(type)]; }
+    EqCurve eqCurve(EqType type, EqMode mode) const { return m_eqCurves[int(type)][int(mode)]; }
+    int afGain() const { return m_afGain; }
+    qint64 frequency(Vfo vfo) const { return vfo == Vfo::B ? m_freqB : m_freqA; }
+    void setUnresponsive(bool on) { m_unresponsive = on; }
+
+private:
+    void handle(const QByteArray &command);
+    void reply(const QByteArray &answer);
+    // With AI on, a successful set is echoed back as its answer.
+    void echo(const QByteArray &answer);
+    QByteArray answerFor(QByteArrayView name) const;
+    EqMode currentEqMode() const { return eqModeFor(m_mode, m_data); }
+    FilterLayout currentFilters() const;
+
+    bool m_open = false;
+    bool m_unresponsive = false;
+    QByteArray m_input;
+    QByteArrayList m_received;
+
+    int m_autoInfo = 0;
+    qint64 m_freqA = 14'195'000;
+    qint64 m_freqB = 7'074'000;
+    int m_rxVfo = 0;
+    int m_txVfo = 0;
+    Mode m_mode = Mode::USB;
+    bool m_data = false;
+    int m_afGain = 80;
+    int m_squelch = 0;
+    int m_rfGain = 255;
+    int m_filterSlot = 1;
+    int m_sh = 10;
+    int m_sl = 2;
+    int m_fw = 500;
+    int m_is = 800;
+    int m_sMeter = 5;
+    QHash<int, int> m_menus;
+    EqCurve m_eqCurves[2][8] = {};
+    EqLevels m_eqLevels[2];
+};
+
+}   // namespace ts590

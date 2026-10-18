@@ -5,6 +5,7 @@
 #include "FrequencyDisplay.h"
 #include "SerialTransport.h"
 #include "SimulatorTransport.h"
+#include "WheelSteps.h"
 
 #include <QApplication>
 #include <QButtonGroup>
@@ -23,6 +24,7 @@
 #include <QRadioButton>
 #include <QSettings>
 #include <QSlider>
+#include <QSpinBox>
 #include <QStandardPaths>
 #include <QStatusBar>
 #include <QTabWidget>
@@ -37,6 +39,33 @@ namespace {
 const QString kSimulatorPort = QStringLiteral("__simulator__");
 constexpr int kMessageTimeoutMs = 8000;
 const QList<qint32> kBaudRates = {9600, 19200, 38400, 57600, 115200};
+
+constexpr int kRitXitStepHz = 10;
+constexpr int kOffsetHoldMs = 500;
+
+// RIT/XIT offset: signed display ("+120 Hz") and one step per wheel click on
+// macOS, like the frequency display.
+class OffsetSpinBox : public QSpinBox
+{
+public:
+    using QSpinBox::QSpinBox;
+
+protected:
+    QString textFromValue(int value) const override
+    {
+        return value > 0 ? QLatin1Char('+') + QString::number(value) : QString::number(value);
+    }
+
+    void wheelEvent(QWheelEvent *event) override
+    {
+        event->accept();
+        if (const int steps = wheelSteps(event, m_wheelRemainder))
+            stepBy(steps);
+    }
+
+private:
+    int m_wheelRemainder = 0;
+};
 
 // Mode buttons in front-panel order.
 const QList<Mode> kModes = {Mode::LSB, Mode::USB, Mode::CW, Mode::CWR,
@@ -60,7 +89,7 @@ MainWindow::MainWindow(QWidget *parent)
     }());
 
     auto *tabs = new QTabWidget;
-    tabs->addTab(createReceivePage(), tr("Receive"));
+    tabs->addTab(createOperatePage(), tr("Operate"));
     tabs->addTab(createEqualizerPage(), tr("Equalizer"));
 
     auto *central = new QWidget;
@@ -87,6 +116,8 @@ MainWindow::MainWindow(QWidget *parent)
         const QString name = model == kModelTs590SG  ? QStringLiteral("TS-590SG")
                              : model == kModelTs590S ? QStringLiteral("TS-590S")
                                                      : tr("ID %1").arg(model);
+        // TX Tune power (TP) only exists on the SG.
+        m_transmitForm->setRowVisible(1, model == kModelTs590SG);
         m_radioInfo->setText(tr("%1 · firmware %2 · %3")
                                  .arg(name, firmware, m_radio.link()->transport()->description()));
     });
@@ -115,6 +146,16 @@ MainWindow::MainWindow(QWidget *parent)
     connect(&m_radio, &Radio::rfGainChanged, this, follow(m_rfSlider));
     connect(&m_radio, &Radio::usbAudioInChanged, this, follow(m_usbInSlider));
     connect(&m_radio, &Radio::usbAudioOutChanged, this, follow(m_usbOutSlider));
+    connect(&m_radio, &Radio::txPowerChanged, this, follow(m_txPowerSlider));
+    connect(&m_radio, &Radio::tunePowerChanged, this, follow(m_tunePowerSlider));
+    connect(&m_radio, &Radio::ritXitChanged, this, &MainWindow::refreshRitXit);
+    connect(&m_radio, &Radio::powerFineChanged, this, [this](bool fine) {
+        // Match the radio: with Power fine OFF it only takes 5 W steps.
+        for (QSlider *slider : {m_txPowerSlider, m_tunePowerSlider}) {
+            slider->setSingleStep(fine ? 1 : 5);
+            slider->setPageStep(fine ? 5 : 10);
+        }
+    });
     connect(&m_radio, &Radio::filterChanged, this, &MainWindow::refreshFilters);
     connect(&m_radio, &Radio::eqCurveChanged, this, &MainWindow::refreshEq);
     connect(&m_radio, &Radio::eqLevelsChanged, this, &MainWindow::refreshEq);
@@ -300,7 +341,7 @@ QSlider *MainWindow::createLevelSlider(void (Radio::*setter)(int), int maximum)
     return slider;
 }
 
-QWidget *MainWindow::createReceivePage()
+QWidget *MainWindow::createOperatePage()
 {
     m_afSlider = createLevelSlider(&Radio::setAfGain);
     m_sqlSlider = createLevelSlider(&Radio::setSquelch);
@@ -355,11 +396,90 @@ QWidget *MainWindow::createReceivePage()
     filterLayout->setColumnStretch(1, 1);
     filterLayout->setRowStretch(3, 1);
 
+    auto *right = new QVBoxLayout;
+    right->addWidget(createRitXitGroup());
+    right->addWidget(createTransmitGroup(), 1);
+
     auto *page = new QWidget;
     auto *layout = new QHBoxLayout(page);
     layout->addWidget(levels, 3);
     layout->addWidget(filters, 2);
+    layout->addLayout(right, 2);
     return page;
+}
+
+QWidget *MainWindow::createRitXitGroup()
+{
+    m_ritButton = new QPushButton(tr("RIT"));
+    m_ritButton->setCheckable(true);
+    m_ritButton->setToolTip(tr("Receive incremental tuning"));
+    connect(m_ritButton, &QPushButton::clicked, &m_radio, &Radio::setRit);
+    m_xitButton = new QPushButton(tr("XIT"));
+    m_xitButton->setCheckable(true);
+    m_xitButton->setToolTip(tr("Transmit incremental tuning"));
+    connect(m_xitButton, &QPushButton::clicked, &m_radio, &Radio::setXit);
+    m_radioControls << m_ritButton << m_xitButton;
+
+    m_offsetSpin = new OffsetSpinBox;
+    m_offsetSpin->setRange(-kRitXitMaxHz, kRitXitMaxHz);
+    m_offsetSpin->setSingleStep(kRitXitStepHz);
+    m_offsetSpin->setSuffix(tr(" Hz"));
+    m_offsetSpin->setAlignment(Qt::AlignRight);
+    m_offsetSpin->setKeyboardTracking(false);
+    m_offsetSpin->setToolTip(tr("Offset shared by RIT and XIT. Turn one of them on to adjust it."));
+    m_offsetHold.setSingleShot(true);
+    m_offsetHold.setInterval(kOffsetHoldMs);
+    connect(&m_offsetHold, &QTimer::timeout, this, &MainWindow::refreshRitXit);
+    connect(m_offsetSpin, &QSpinBox::valueChanged, this, [this](int hz) {
+        if (m_applyingRadioState)
+            return;
+        m_offsetHold.start();
+        m_radio.setRitXitOffset(hz);
+    });
+
+    m_clearOffsetButton = new QPushButton(tr("CLEAR"));
+    m_clearOffsetButton->setToolTip(tr("Set the RIT/XIT offset to 0"));
+    connect(m_clearOffsetButton, &QPushButton::clicked, this, [this] { m_offsetSpin->setValue(0); });
+
+    auto *group = new QGroupBox(tr("RIT / XIT"));
+    auto *layout = new QGridLayout(group);
+    layout->addWidget(m_ritButton, 0, 0);
+    layout->addWidget(m_xitButton, 0, 1);
+    layout->addWidget(m_offsetSpin, 1, 0);
+    layout->addWidget(m_clearOffsetButton, 1, 1);
+    return group;
+}
+
+QWidget *MainWindow::createTransmitGroup()
+{
+    auto createPowerSlider = [this](void (Radio::*setter)(int)) {
+        auto *slider = new QSlider(Qt::Horizontal);
+        slider->setRange(kTxPowerMin, kTxPowerMax);
+        connect(slider, &QSlider::valueChanged, this, [this, setter](int watts) {
+            if (!m_applyingRadioState)
+                (m_radio.*setter)(watts);
+        });
+        m_radioControls << slider;
+        return slider;
+    };
+    m_txPowerSlider = createPowerSlider(&Radio::setTxPower);
+    m_txPowerSlider->setToolTip(tr("Transmit output power (5–100 W, 5–25 W in AM)"));
+    m_tunePowerSlider = createPowerSlider(&Radio::setTunePower);
+    m_tunePowerSlider->setToolTip(tr("Output power used for TX Tune"));
+
+    auto *group = new QGroupBox(tr("Transmit"));
+    m_transmitForm = new QFormLayout(group);
+    for (auto [name, slider] : {std::pair{tr("TX power"), m_txPowerSlider}, std::pair{tr("Tune power"), m_tunePowerSlider}}) {
+        auto *value = new QLabel;
+        value->setMinimumWidth(value->fontMetrics().horizontalAdvance(QStringLiteral("100 W")) + 4);
+        value->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        connect(slider, &QSlider::valueChanged, value, [value](int watts) { value->setText(tr("%1 W").arg(watts)); });
+        auto *row = new QHBoxLayout;
+        row->addWidget(slider, 1);
+        row->addWidget(value);
+        m_transmitForm->addRow(name, row);
+    }
+    return group;
 }
 
 QWidget *MainWindow::createEqualizerPage()
@@ -441,11 +561,13 @@ void MainWindow::onStateChanged(Radio::State state)
         m_sMeter->setValue(0);
         m_txIndicator->setEnabled(false);
         onVfoSelectionChanged(Vfo::A, Vfo::A);
+        refreshRitXit();
         break;
     case Radio::State::Connecting: m_radioInfo->setText(tr("Connecting…")); break;
     case Radio::State::Connected:
         onModeChanged(m_radio.mode(), m_radio.dataMode());
         onVfoSelectionChanged(m_radio.rxVfo(), m_radio.txVfo());
+        refreshRitXit();
         break;
     }
 }
@@ -454,6 +576,15 @@ void MainWindow::onStateChanged(Radio::State state)
 
 void MainWindow::onModeChanged(Mode mode, bool data)
 {
+    {
+        // AM tops out at 25 W. Changing the range may clamp the value; that
+        // must not be sent back to the radio.
+        m_applyingRadioState = true;
+        m_txPowerSlider->setMaximum(txPowerMax(mode));
+        if (const auto watts = m_radio.txPower())
+            m_txPowerSlider->setValue(*watts);
+        m_applyingRadioState = false;
+    }
     if (QAbstractButton *button = m_modeButtons->button(int(mode))) {
         button->setChecked(true);
     } else if (QAbstractButton *checked = m_modeButtons->checkedButton()) {
@@ -530,6 +661,22 @@ void MainWindow::refreshEq(EqType type)
     panel->setEqMode(m_radio.eqMode());
     panel->setCurve(m_radio.eqCurve(type));
     panel->setLevels(m_radio.eqLevels(type));
+}
+
+void MainWindow::refreshRitXit()
+{
+    const bool connected = m_radio.state() == Radio::State::Connected;
+    m_ritButton->setChecked(connected && m_radio.rit());
+    m_xitButton->setChecked(connected && m_radio.xit());
+    // As on the radio, the offset only applies while RIT or XIT is on.
+    const bool adjustable = connected && (m_radio.rit() || m_radio.xit());
+    m_offsetSpin->setEnabled(adjustable);
+    m_clearOffsetButton->setEnabled(adjustable);
+    if (m_offsetHold.isActive())
+        return;   // refreshRitXit runs again when the hold expires
+    m_applyingRadioState = true;
+    m_offsetSpin->setValue(connected ? m_radio.ritXitOffset() : 0);
+    m_applyingRadioState = false;
 }
 
 void MainWindow::showMessage(const QString &text)

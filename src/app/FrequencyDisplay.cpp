@@ -1,6 +1,7 @@
 #include "FrequencyDisplay.h"
 
 #include "CatCodec.h"
+#include "WheelSteps.h"
 
 #include <QFontDatabase>
 #include <QKeyEvent>
@@ -201,35 +202,7 @@ void FrequencyDisplay::wheelEvent(QWheelEvent *event)
         return;
     }
     event->accept();
-
-    // Tune by physical direction: wheel rolled away / fingers pushed up = up,
-    // even with macOS "natural scrolling" (which inverts the reported delta).
-    int delta = event->angleDelta().y();
-    if (event->inverted())
-        delta = -delta;
-    if (delta == 0)
-        return;
-
-    int notches = 0;
-#ifdef Q_OS_MACOS
-    // A mouse wheel (no scroll phase) sends exactly one event per detent, but
-    // with system acceleration applied the delta is often far below 120.
-    // Count events, not delta, so every click of the wheel is one step.
-    if (event->phase() == Qt::NoScrollPhase) {
-        m_wheelRemainder = 0;
-        notches = delta > 0 ? 1 : -1;
-    }
-#endif
-    if (notches == 0) {
-        // Trackpads, and high-resolution wheels elsewhere, send many small
-        // deltas per notch: accumulate to the standard 120 per step.
-        if (event->phase() == Qt::ScrollBegin)
-            m_wheelRemainder = 0;
-        m_wheelRemainder += delta;
-        notches = m_wheelRemainder / QWheelEvent::DefaultDeltasPerStep;
-        m_wheelRemainder -= notches * QWheelEvent::DefaultDeltasPerStep;
-    }
-    if (notches != 0)
+    if (const int notches = wheelSteps(event, m_wheelRemainder))
         step(notches * qint64(std::pow(10, place)));
 }
 

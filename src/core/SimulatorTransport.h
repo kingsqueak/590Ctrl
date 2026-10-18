@@ -35,6 +35,9 @@ public:
     qint64 frequency(Vfo vfo) const { return vfo == Vfo::B ? m_freqB : m_freqA; }
     Vfo rxVfo() const { return Vfo(m_rxVfo); }
     Vfo txVfo() const { return Vfo(m_txVfo); }
+    int ritXitOffset() const { return m_ritXitOffset; }
+    int txPower() const { return m_txPower; }
+    int tunePower() const { return m_tunePower; }
     void setUnresponsive(bool on) { m_unresponsive = on; }
 
 private:
@@ -67,6 +70,11 @@ private:
     int m_fw = 500;
     int m_is = 800;
     int m_sMeter = 5;
+    bool m_rit = false;
+    bool m_xit = false;
+    int m_ritXitOffset = 0;
+    int m_txPower = 100;
+    int m_tunePower = 10;
     QHash<int, int> m_menus;
     EqCurve m_eqCurves[2][8] = {};
     EqLevels m_eqLevels[2];

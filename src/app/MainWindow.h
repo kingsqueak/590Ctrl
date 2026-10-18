@@ -6,6 +6,7 @@
 #include "Radio.h"
 
 #include <QMainWindow>
+#include <QTimer>
 
 class QButtonGroup;
 class QCheckBox;
@@ -15,6 +16,8 @@ class QProgressBar;
 class QPushButton;
 class QRadioButton;
 class QSlider;
+class QSpinBox;
+class QFormLayout;
 class EqualizerPanel;
 class FrequencyDisplay;
 
@@ -32,7 +35,9 @@ private:
     QWidget *createConnectionBar();
     QWidget *createVfoPanel();
     QWidget *createModeBar();
-    QWidget *createReceivePage();
+    QWidget *createOperatePage();
+    QWidget *createRitXitGroup();
+    QWidget *createTransmitGroup();
     QWidget *createEqualizerPage();
     QSlider *createLevelSlider(void (ts590::Radio::*setter)(int), int maximum = 255);
 
@@ -42,6 +47,7 @@ private:
     void onModeChanged(ts590::Mode mode, bool data);
     void onVfoSelectionChanged(ts590::Vfo rx, ts590::Vfo tx);
     void refreshFilters();
+    void refreshRitXit();
     void refreshEq(ts590::EqType type);
     void showMessage(const QString &text);
 
@@ -70,6 +76,16 @@ private:
     QSlider *m_rfSlider = nullptr;
     QSlider *m_usbInSlider = nullptr;
     QSlider *m_usbOutSlider = nullptr;
+
+    QPushButton *m_ritButton = nullptr;
+    QPushButton *m_xitButton = nullptr;
+    QPushButton *m_clearOffsetButton = nullptr;
+    QSpinBox *m_offsetSpin = nullptr;
+    QTimer m_offsetHold;   // ignore offset echoes briefly while the user adjusts
+
+    QFormLayout *m_transmitForm = nullptr;
+    QSlider *m_txPowerSlider = nullptr;
+    QSlider *m_tunePowerSlider = nullptr;
 
     QRadioButton *m_filterA = nullptr;
     QRadioButton *m_filterB = nullptr;

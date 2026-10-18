@@ -1,6 +1,7 @@
 #include "CatCodec.h"
 
 #include <algorithm>
+#include <cstdlib>
 
 namespace ts590 {
 
@@ -79,9 +80,14 @@ MenuNumbers menuNumbersFor(int modelId)
 {
     if (modelId == kModelTs590S) {
         // The S has no HI/LO vs WIDTH/SHIFT menus (SSB is always HI/LO).
-        return {-1, -1, 64, 65};
+        return {-1, -1, 64, 65, 48};
     }
-    return {28, 29, 71, 72};
+    return {28, 29, 71, 72, 54};
+}
+
+int txPowerMax(Mode mode)
+{
+    return mode == Mode::AM ? kTxPowerMaxAm : kTxPowerMax;
 }
 
 // ---------------------------------------------------------------- Equalizer
@@ -223,6 +229,23 @@ QByteArray rxVfo(Vfo vfo) { return "FR" + QByteArray::number(int(vfo)) + ';'; }
 QByteArray txVfo(Vfo vfo) { return "FT" + QByteArray::number(int(vfo)) + ';'; }
 
 QByteArray copyVfo() { return "VV;"; }
+
+QByteArray rit(bool on) { return on ? "RT1;" : "RT0;"; }
+
+QByteArray xit(bool on) { return on ? "XT1;" : "XT0;"; }
+
+QByteArray ritXitOffset(int hz)
+{
+    hz = std::clamp(hz, -kRitXitMaxHz, kRitXitMaxHz);
+    QByteArray out = "RC;";
+    if (hz != 0)
+        out += (hz > 0 ? "RU" : "RD") + digits(std::abs(hz), 5) + ';';
+    return out;
+}
+
+QByteArray txPower(int watts) { return "PC" + digits(std::clamp(watts, kTxPowerMin, kTxPowerMax), 3) + ';'; }
+
+QByteArray tunePower(int watts) { return "TP" + digits(std::clamp(watts, kTxPowerMin, kTxPowerMax), 3) + ';'; }
 
 QByteArray mode(Mode mode) { return "MD" + QByteArray::number(int(mode)) + ';'; }
 

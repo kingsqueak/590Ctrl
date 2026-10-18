@@ -115,6 +115,51 @@ private slots:
         QCOMPARE(radio.usbAudioOut(), std::optional(9));
     }
 
+    void ritXitOffset()
+    {
+        Radio radio;
+        SimulatorTransport *sim = connectSim(radio);
+        QVERIFY(!radio.rit() && !radio.xit());
+
+        radio.setRitXitOffset(500);   // ignored while both are off
+        radio.setRit(true);
+        QTRY_VERIFY(radio.rit());
+        QTRY_COMPARE(radio.link()->pendingCount(), 0);
+        QCOMPARE(sim->ritXitOffset(), 0);
+
+        radio.setRitXitOffset(120);
+        radio.setRitXitOffset(-250);   // absolute, not cumulative
+        QTRY_COMPARE(sim->ritXitOffset(), -250);
+        QTRY_COMPARE(radio.link()->pendingCount(), 0);
+        QCOMPARE(radio.ritXitOffset(), -250);
+
+        radio.setXit(true);
+        radio.setRit(false);
+        QTRY_VERIFY(radio.xit() && !radio.rit());
+        radio.setRitXitOffset(0);
+        QTRY_COMPARE(sim->ritXitOffset(), 0);
+    }
+
+    void txPower()
+    {
+        Radio radio;
+        SimulatorTransport *sim = connectSim(radio);
+        QCOMPARE(radio.txPower(), std::optional(100));
+        QCOMPARE(radio.tunePower(), std::optional(10));
+        QVERIFY(!radio.powerFine());
+
+        radio.setTxPower(47);   // power fine off: 5 W steps
+        QTRY_COMPARE(sim->txPower(), 45);
+        radio.setTunePower(30);
+        QTRY_COMPARE(sim->tunePower(), 30);
+
+        radio.setMode(Mode::AM);
+        QTRY_COMPARE(radio.mode(), Mode::AM);
+        radio.setTxPower(80);   // AM tops out at 25 W
+        QTRY_COMPARE(sim->txPower(), 25);
+        QTRY_COMPARE(radio.txPower(), std::optional(25));
+    }
+
     void modeChangeRefreshesFilterLayout()
     {
         Radio radio;

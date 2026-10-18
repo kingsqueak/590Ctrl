@@ -4,6 +4,7 @@
 #include <QTimer>
 
 #include <algorithm>
+#include <cstdlib>
 
 namespace ts590 {
 
@@ -32,6 +33,7 @@ SimulatorTransport::SimulatorTransport(QObject *parent)
     const MenuNumbers menus = menuNumbersFor(kModelTs590SG);
     m_menus[menus.usbAudioIn] = 4;
     m_menus[menus.usbAudioOut] = 5;
+    m_menus[menus.powerFine] = 0;
 }
 
 bool SimulatorTransport::open()
@@ -122,6 +124,22 @@ QByteArray SimulatorTransport::answerFor(QByteArrayView name) const
         return "FW" + digits(m_fw, 4);
     if (name == "IS")
         return "IS " + digits(m_is, 4);
+    if (name == "RT")
+        return m_rit ? "RT1" : "RT0";
+    if (name == "XT")
+        return m_xit ? "XT1" : "XT0";
+    if (name == "PC")
+        return "PC" + digits(m_txPower, 3);
+    if (name == "TP")
+        return "TP" + digits(m_tunePower, 3);
+    if (name == "IF") {
+        // Same layout as the real radio, including ' ' as the positive sign.
+        const qint64 freq = m_rxVfo == 1 ? m_freqB : m_freqA;
+        return "IF" + digits(freq, 11) + "     " + (m_ritXitOffset < 0 ? '-' : ' ')
+               + digits(std::abs(m_ritXitOffset), 4) + (m_rit ? '1' : '0') + (m_xit ? '1' : '0') + "000" + '0'
+               + QByteArray::number(int(m_mode)) + QByteArray::number(m_rxVfo) + '0'
+               + (m_rxVfo != m_txVfo ? '1' : '0') + "0000";
+    }
     if (name == "UR" || name == "UT") {
         QByteArray out = name.toByteArray();
         for (int raw : m_eqLevels[name == "UR" ? int(EqType::Rx) : int(EqType::Tx)])
@@ -168,6 +186,13 @@ void SimulatorTransport::handle(const QByteArray &command)
             m_txVfo = vfo;
         return echo(name.toByteArray() + QByteArray::number(vfo));
     }
+    // RC takes no parameters, so it looks like a read; it isn't one.
+    if (name == "RC" && isRead) {
+        if (!m_rit && !m_xit)
+            return reply("?");
+        m_ritXitOffset = 0;
+        return echo(answerFor("IF"));
+    }
     if (name == "VV" && isRead) {
         // Copies the receive VFO onto the other one.
         if (m_rxVfo == 1)
@@ -176,11 +201,6 @@ void SimulatorTransport::handle(const QByteArray &command)
             m_freqB = m_freqA;
         echo(answerFor("FA"));
         return echo(answerFor("FB"));
-    }
-    if (name == "IF" && isRead) {
-        const qint64 freq = m_rxVfo == 1 ? m_freqB : m_freqA;
-        return reply("IF" + digits(freq, 11) + "      0000" + "00000" + "0"
-                     + QByteArray::number(int(m_mode)) + QByteArray::number(m_rxVfo) + "000000");
     }
     if (isRead) {
         if (name == "FW" || name == "IS") {
@@ -194,6 +214,30 @@ void SimulatorTransport::handle(const QByteArray &command)
     }
 
     // ---- set commands and parameterized reads
+    if (name == "RT" || name == "XT") {
+        if (args != "0" && args != "1")
+            return reply("?");
+        (name == "RT" ? m_rit : m_xit) = args == "1";
+        return echo(answerFor(name));
+    }
+    if (name == "RU" || name == "RD") {
+        const auto hz = number(args);
+        if (!hz)
+            return reply("?");
+        m_ritXitOffset = std::clamp(m_ritXitOffset + (name == "RU" ? *hz : -*hz), -kRitXitMaxHz, kRitXitMaxHz);
+        return echo(answerFor("IF"));   // AI reports offset changes via IF
+    }
+    if (name == "PC" || name == "TP") {
+        auto watts = number(args);
+        if (!watts || args.size() != 3)
+            return reply("?");
+        const int maximum = name == "PC" ? txPowerMax(m_mode) : kTxPowerMax;
+        *watts = std::clamp(*watts, kTxPowerMin, maximum);
+        if (m_menus.value(menuNumbersFor(kModelTs590SG).powerFine) == 0)
+            *watts -= *watts % 5;
+        (name == "PC" ? m_txPower : m_tunePower) = *watts;
+        return echo(answerFor(name));
+    }
     if (name == "FA" || name == "FB") {
         const auto hz = parseNumber(args);
         if (args.size() != 11 || !hz || *hz < kMinFrequencyHz || *hz > kMaxFrequencyHz)

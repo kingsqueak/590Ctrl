@@ -51,9 +51,17 @@ struct MenuNumbers {
     int ssbDataFilterMode = -1;   // same for SSB-DATA
     int usbAudioIn = -1;          // USB audio input level, 0..9
     int usbAudioOut = -1;         // USB audio output level, 0..9
+    int powerFine = -1;           // OFF: power in 5 W steps, ON: 1 W steps
 };
 MenuNumbers menuNumbersFor(int modelId);
 constexpr int kUsbAudioLevelMax = 9;
+
+// RIT/XIT offset range (RU/RD) and TX power limits (PC/TP).
+constexpr int kRitXitMaxHz = 9999;
+constexpr int kTxPowerMin = 5;
+constexpr int kTxPowerMax = 100;
+constexpr int kTxPowerMaxAm = 25;
+int txPowerMax(Mode mode);
 
 // ---------------------------------------------------------------- Equalizer
 
@@ -136,6 +144,13 @@ QByteArray frequency(Vfo vfo, qint64 hz);        // FA / FB
 QByteArray rxVfo(Vfo vfo);                       // FR: selects RX VFO, simplex
 QByteArray txVfo(Vfo vfo);                       // FT: selects TX VFO, split if != RX
 QByteArray copyVfo();                            // VV: A=B
+QByteArray rit(bool on);                         // RT
+QByteArray xit(bool on);                         // XT
+// RC then RU/RD: sets the shared RIT/XIT offset to an absolute value. Only
+// valid while RIT or XIT is on (RC is rejected otherwise).
+QByteArray ritXitOffset(int hz);
+QByteArray txPower(int watts);                   // PC
+QByteArray tunePower(int watts);                 // TP (TS-590SG only)
 QByteArray mode(Mode mode);                      // MD
 QByteArray dataMode(bool on);                    // DA
 QByteArray afGain(int level);                    // AG (0..255)

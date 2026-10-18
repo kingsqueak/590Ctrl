@@ -83,6 +83,11 @@ void Radio::teardown()
     m_sh = m_sl = m_fw = m_is = std::nullopt;
     m_usbAudioIn.reset();
     m_usbAudioOut.reset();
+    m_rit = m_xit = false;
+    m_ritXitOffset = 0;
+    m_txPower.reset();
+    m_tunePower.reset();
+    m_powerFine = false;
     for (auto &perType : m_eqCurves) {
         for (auto &curve : perType)
             curve.reset();
@@ -120,12 +125,15 @@ void Radio::requestFullState()
     m_link.send(cmd::autoInfo(kAutoInfoLevel));
     const MenuNumbers menus = menuNumbersFor(m_modelId);
     // Filter knob meaning depends on these, so read them before the mode.
-    for (int menu : {menus.ssbFilterMode, menus.ssbDataFilterMode, menus.usbAudioIn, menus.usbAudioOut}) {
+    for (int menu :
+         {menus.ssbFilterMode, menus.ssbDataFilterMode, menus.usbAudioIn, menus.usbAudioOut, menus.powerFine}) {
         if (menu >= 0)
             m_link.query(cmd::readMenu(menu));
     }
-    for (const char *read : {"FA;", "FB;", "FR;", "FT;", "IF;", "DA;", "AG0;", "SQ0;", "RG;"})
+    for (const char *read : {"FA;", "FB;", "FR;", "FT;", "IF;", "RT;", "XT;", "DA;", "AG0;", "SQ0;", "RG;", "PC;"})
         m_link.query(read);
+    if (m_modelId == kModelTs590SG)
+        m_link.query("TP;");
     // MD's answer sets the mode, which pulls everything mode-dependent.
     m_link.query("MD;");
 }
@@ -217,8 +225,30 @@ void Radio::handleFrame(const QByteArray &frame)
     } else if (name == "IF") {
         if (const auto info = parseStatus(frame)) {
             update(m_transmitting, info->transmitting, &Radio::transmitChanged);
+            if (info->rit != m_rit || info->xit != m_xit || info->ritXitOffsetHz != m_ritXitOffset) {
+                m_rit = info->rit;
+                m_xit = info->xit;
+                m_ritXitOffset = info->ritXitOffsetHz;
+                emit ritXitChanged();
+            }
             if (info->mode != Mode::None)
                 applyMode(info->mode, std::nullopt);
+        }
+    } else if ((name == "RT" || name == "XT") && frame.size() == 3) {
+        bool &field = name == "RT" ? m_rit : m_xit;
+        if (field != (frame[2] == '1')) {
+            field = frame[2] == '1';
+            emit ritXitChanged();
+        }
+    } else if ((name == "PC" || name == "TP") && frame.size() == 5) {
+        const auto watts = numberAt(frame, 2);
+        std::optional<int> &field = name == "PC" ? m_txPower : m_tunePower;
+        if (watts && field != *watts) {
+            field = *watts;
+            if (name == "PC")
+                emit txPowerChanged(*watts);
+            else
+                emit tunePowerChanged(*watts);
         }
     } else if (name == "AG" && frame.size() == 6) {
         if (const auto v = numberAt(frame, 3))
@@ -272,6 +302,8 @@ void Radio::handleFrame(const QByteArray &frame)
                 else
                     emit usbAudioOutChanged(*field);
             }
+        } else if (menu->number == menus.powerFine) {
+            update(m_powerFine, *value == 1, &Radio::powerFineChanged);
         } else if (menu->number == menus.ssbFilterMode || menu->number == menus.ssbDataFilterMode) {
             // P5 = 0: "1 (HI/LO)", P5 = 1: "2 (WIDTH/SHIFT)".
             const bool widthShift = *value == 1;
@@ -428,6 +460,50 @@ void Radio::setUsbAudioIn(int level)
 void Radio::setUsbAudioOut(int level)
 {
     setMenuLevel(menuNumbersFor(m_modelId).usbAudioOut, m_usbAudioOut, level);
+}
+
+void Radio::setRit(bool on)
+{
+    m_link.send(cmd::rit(on), "RT");
+    m_link.query("RT;");
+}
+
+void Radio::setXit(bool on)
+{
+    m_link.send(cmd::xit(on), "XT");
+    m_link.query("XT;");
+}
+
+void Radio::setRitXitOffset(int hz)
+{
+    if (!m_rit && !m_xit)
+        return;
+    m_ritXitOffset = std::clamp(hz, -kRitXitMaxHz, kRitXitMaxHz);
+    // One coalescable command: dragging only ever sends the latest offset.
+    m_link.send(cmd::ritXitOffset(m_ritXitOffset), "RC");
+    m_link.query("IF;");
+}
+
+void Radio::setPower(QByteArray (*encode)(int), std::optional<int> &field, int watts, int maximum)
+{
+    watts = std::clamp(watts, kTxPowerMin, maximum);
+    if (!m_powerFine)
+        watts -= watts % 5;   // the radio rounds down to 5 W steps
+    field = watts;
+    const QByteArray command = encode(watts);
+    m_link.send(command, command.left(2));
+    m_link.query(command.left(2) + ';');
+}
+
+void Radio::setTxPower(int watts)
+{
+    setPower(&cmd::txPower, m_txPower, watts, txPowerMax(m_mode));
+}
+
+void Radio::setTunePower(int watts)
+{
+    if (m_modelId == kModelTs590SG)
+        setPower(&cmd::tunePower, m_tunePower, watts, kTxPowerMax);   // TX tune isn't limited in AM
 }
 
 void Radio::setMode(Mode mode)

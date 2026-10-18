@@ -43,6 +43,21 @@ private slots:
         QCOMPARE(cmd::copyVfo(), QByteArray("VV;"));
     }
 
+    void encodesRitXitAndPower()
+    {
+        QCOMPARE(cmd::rit(true), QByteArray("RT1;"));
+        QCOMPARE(cmd::xit(false), QByteArray("XT0;"));
+        QCOMPARE(cmd::ritXitOffset(0), QByteArray("RC;"));
+        QCOMPARE(cmd::ritXitOffset(120), QByteArray("RC;RU00120;"));
+        QCOMPARE(cmd::ritXitOffset(-2500), QByteArray("RC;RD02500;"));
+        QCOMPARE(cmd::ritXitOffset(20000), QByteArray("RC;RU09999;"));
+        QCOMPARE(cmd::txPower(50), QByteArray("PC050;"));
+        QCOMPARE(cmd::txPower(1), QByteArray("PC005;"));
+        QCOMPARE(cmd::tunePower(100), QByteArray("TP100;"));
+        QCOMPARE(txPowerMax(Mode::AM), 25);
+        QCOMPARE(txPowerMax(Mode::USB), 100);
+    }
+
     void menuNumbersDependOnModel()
     {
         const MenuNumbers sg = menuNumbersFor(kModelTs590SG);
@@ -53,6 +68,8 @@ private slots:
         QCOMPARE(s.usbAudioIn, 64);
         QCOMPARE(s.usbAudioOut, 65);
         QCOMPARE(s.ssbFilterMode, -1);
+        QCOMPARE(sg.powerFine, 54);
+        QCOMPARE(s.powerFine, 48);
     }
 
     void encodesMenusAndEq()

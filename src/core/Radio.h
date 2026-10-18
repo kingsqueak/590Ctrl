@@ -51,6 +51,12 @@ public:
     // Menu-backed USB audio levels, 0..9; nullopt until read.
     std::optional<int> usbAudioIn() const { return m_usbAudioIn; }
     std::optional<int> usbAudioOut() const { return m_usbAudioOut; }
+    bool rit() const { return m_rit; }
+    bool xit() const { return m_xit; }
+    int ritXitOffset() const { return m_ritXitOffset; }   // Hz, shared by RIT and XIT
+    std::optional<int> txPower() const { return m_txPower; }
+    std::optional<int> tunePower() const { return m_tunePower; }   // TS-590SG only
+    bool powerFine() const { return m_powerFine; }   // 1 W steps; otherwise 5 W
 
     FilterSlot filterSlot() const { return m_filterSlot; }
     FilterLayout filterLayout() const;
@@ -74,6 +80,12 @@ public:
     void setRfGain(int level);
     void setUsbAudioIn(int level);
     void setUsbAudioOut(int level);
+    void setRit(bool on);
+    void setXit(bool on);
+    // Absolute offset. Needs RIT or XIT on, as on the radio.
+    void setRitXitOffset(int hz);
+    void setTxPower(int watts);
+    void setTunePower(int watts);
     void setFilterSlot(FilterSlot slot);
     void setFilterValue(FilterCommand command, int raw);
     // Selects the curve for the current mode family.
@@ -98,6 +110,10 @@ signals:
     void rfGainChanged(int level);
     void usbAudioInChanged(int level);
     void usbAudioOutChanged(int level);
+    void ritXitChanged();   // on/off state or offset
+    void txPowerChanged(int watts);
+    void tunePowerChanged(int watts);
+    void powerFineChanged(bool fine);
     void sMeterChanged(int dots);
     void transmitChanged(bool transmitting);
     // Slot, layout or values changed.
@@ -118,6 +134,7 @@ private:
     void applyMode(Mode mode, std::optional<bool> data);
     void setMenuLevel(int menu, std::optional<int> &field, int level);
     void requestVfoState();
+    void setPower(QByteArray (*encode)(int), std::optional<int> &field, int watts, int maximum);
     void pollMeter();
     void teardown();
 
@@ -153,6 +170,12 @@ private:
     bool m_transmitting = false;
     std::optional<int> m_usbAudioIn;
     std::optional<int> m_usbAudioOut;
+    bool m_rit = false;
+    bool m_xit = false;
+    int m_ritXitOffset = 0;
+    std::optional<int> m_txPower;
+    std::optional<int> m_tunePower;
+    bool m_powerFine = false;
 
     FilterSlot m_filterSlot = FilterSlot::A;
     bool m_ssbWidthShift = false;       // EX028

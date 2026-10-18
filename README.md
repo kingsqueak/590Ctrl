@@ -226,7 +226,7 @@ Protocol reference: Kenwood *TS-590S/SG PC Control Command Reference Guide*
 
 ## License
 
-Copyright (C) 2026 KC2RGW Chris
+Copyright (C) 2026 KC2RGW Chris Esser
 
 590Ctrl is free software: you can redistribute it and/or modify it under the
 terms of the GNU General Public License as published by the Free Software

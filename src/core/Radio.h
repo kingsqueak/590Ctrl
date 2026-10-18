@@ -88,6 +88,8 @@ public:
     std::optional<int> nbLevel() const { return m_nbLevel; }   // of the blanker that's on
     NoiseReduction noiseReduction() const { return m_noiseReduction; }
     std::optional<int> nrLevel() const { return m_nrLevel; }   // NR1 level or NR2 speed
+    Agc agc() const { return m_agc; }
+    std::optional<int> agcTimeConstant() const { return m_agcTime; }   // of the active AGC mode
 
     FilterSlot filterSlot() const { return m_filterSlot; }
     FilterLayout filterLayout() const;
@@ -141,6 +143,8 @@ public:
     void setNbLevel(int level);
     void setNoiseReduction(NoiseReduction nr);
     void setNrLevel(int level);
+    void setAgc(Agc agc);
+    void setAgcTimeConstant(int value);
     void setFilterSlot(FilterSlot slot);
     void setFilterValue(FilterCommand command, int raw);
     // Selects the curve for the current mode family.
@@ -183,6 +187,7 @@ signals:
     void notchPositionChanged(int position);
     void noiseBlankerChanged();      // selection or level
     void noiseReductionChanged();    // selection or level
+    void agcChanged();               // mode or time constant
     void sMeterChanged(int dots);
     void transmitChanged(bool transmitting);
     void txMetersChanged();
@@ -276,6 +281,8 @@ private:
     std::optional<int> m_nbLevel;
     NoiseReduction m_noiseReduction = NoiseReduction::Off;
     std::optional<int> m_nrLevel;
+    Agc m_agc = Agc::Off;
+    std::optional<int> m_agcTime;
 
     FilterSlot m_filterSlot = FilterSlot::A;
     bool m_ssbWidthShift = false;       // EX028

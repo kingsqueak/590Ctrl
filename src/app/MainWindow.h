@@ -55,6 +55,7 @@ private:
     void refreshRitXit();
     void refreshNotch();
     void refreshNoise();
+    void refreshAgc();
     void refreshMonitor();
     void refreshAntenna();
     void refreshFrontEnd();   // ATT / PRE button
@@ -101,6 +102,9 @@ private:
     QPushButton *m_nrButton = nullptr;
     QSlider *m_nrSlider = nullptr;
     QLabel *m_nrValue = nullptr;
+    QPushButton *m_agcButton = nullptr;
+    QSlider *m_agcSlider = nullptr;
+    QLabel *m_agcValue = nullptr;
 
     QPushButton *m_ritButton = nullptr;
     QPushButton *m_xitButton = nullptr;

@@ -46,6 +46,8 @@ public:
     bool notchWide() const { return m_notchWide; }
     int notchPosition() const { return m_notchPosition; }
     int noiseBlanker() const { return m_noiseBlanker; }
+    int agc() const { return m_agc; }
+    int agcTime(int agc) const { return m_agcTimes[agc]; }
     int nbLevel(int blanker) const { return m_nbLevels[blanker]; }
     int noiseReduction() const { return m_noiseReduction; }
     int nrLevel(int reduction) const { return m_nrLevels[reduction]; }
@@ -118,6 +120,9 @@ private:
     QByteArray m_tuner = "000";   // AC P1 P2 P3
     bool m_transmitting = false;
     int m_txMeters[3] = {};   // SWR, COMP, ALC
+    int m_agc = 1;
+    int m_agcBeforeOff = 1;
+    int m_agcTimes[3] = {0, 12, 4};   // [1] slow, [2] fast
     int m_noiseBlanker = 0;
     int m_nbLevels[3] = {0, 3, 6};   // per blanker: [1] NB1, [2] NB2
     int m_noiseReduction = 0;

@@ -232,6 +232,54 @@ private slots:
         QCOMPARE(radio.link()->pendingCount(), 0);
     }
 
+    void agcModesKeepSeparateTimeConstants()
+    {
+        Radio radio;
+        SimulatorTransport *sim = connectSim(radio);
+        QCOMPARE(radio.agc(), Agc::Slow);
+        QTRY_COMPARE(radio.agcTimeConstant(), std::optional(12));
+
+        radio.setAgc(Agc::Fast);
+        QTRY_COMPARE(radio.agcTimeConstant(), std::optional(4));
+        radio.setAgcTimeConstant(7);
+        QTRY_COMPARE(sim->agcTime(2), 7);
+        QCOMPARE(sim->agcTime(1), 12);
+
+        radio.setAgc(Agc::Off);
+        QTRY_COMPARE(radio.agc(), Agc::Off);
+        QVERIFY(!radio.agcTimeConstant());
+        QTRY_COMPARE(radio.link()->pendingCount(), 0);
+        radio.setAgcTimeConstant(9);   // nothing to adjust with AGC off: not sent
+        QCOMPARE(radio.link()->pendingCount(), 0);
+
+        // Back on from off (it was FAST): GC3 first, then the mode asked for.
+        QSignalSpy rejections(radio.link(), &CatLink::commandRejected);
+        radio.setAgc(Agc::Slow);
+        QTRY_COMPARE(radio.agc(), Agc::Slow);
+        QTRY_COMPARE(radio.link()->pendingCount(), 0);
+        QCOMPARE(rejections.size(), 0);
+        const QByteArrayList sent = sim->received();
+        const qsizetype resume = sent.lastIndexOf("GC3");
+        QVERIFY(resume >= 0);
+        QCOMPARE(sent.value(resume + 1), QByteArray("GC1"));
+        QTRY_COMPARE(radio.agcTimeConstant(), std::optional(12));
+
+        // Off again, then FAST: GC3 restores SLOW, GC2 moves on to FAST.
+        radio.setAgc(Agc::Off);
+        QTRY_COMPARE(radio.agc(), Agc::Off);
+        radio.setAgc(Agc::Fast);
+        QTRY_COMPARE(radio.agc(), Agc::Fast);
+        QTRY_COMPARE(radio.agcTimeConstant(), std::optional(7));
+        QCOMPARE(rejections.size(), 0);
+
+        // In FM the radio refuses GC; that must not surface as an error.
+        QSignalSpy messages(&radio, &Radio::message);
+        radio.setMode(Mode::FM);
+        QTRY_COMPARE(radio.mode(), Mode::FM);
+        QTRY_COMPARE(radio.link()->pendingCount(), 0);
+        QCOMPARE(messages.size(), 0);
+    }
+
     void noiseReductionLevels()
     {
         Radio radio;

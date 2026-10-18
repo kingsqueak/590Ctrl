@@ -80,6 +80,11 @@ private slots:
         QVERIFY(!nbLevelAdjustable(NoiseBlanker::Both));
         QVERIFY(!noiseBlankerSupported(Mode::FM));
         QVERIFY(!nr2Supported(Mode::FM));
+        QCOMPARE(cmd::agc(Agc::Fast), QByteArray("GC2;"));
+        QCOMPARE(cmd::agcResume(), QByteArray("GC3;"));
+        QCOMPARE(cmd::agcTimeConstant(0), QByteArray("GT01;"));
+        QCOMPARE(cmd::agcTimeConstant(25), QByteArray("GT20;"));
+        QVERIFY(!agcSupported(Mode::FM));
     }
 
     void sMeterScale()
@@ -97,6 +102,9 @@ private slots:
         QCOMPARE(sMeterDotsForS(5), 9);
         QCOMPARE(sMeterDotsForS(9), 15);
         QCOMPARE(sMeterDotsForDbOverS9(20), 20);
+        QCOMPARE(rfGainMeterDots(255), 0.0);
+        QCOMPARE(rfGainMeterDots(0), 30.0);
+        QCOMPARE(rfGainMeterDots(-5), 30.0);
     }
 
     void txMeterCalibration()

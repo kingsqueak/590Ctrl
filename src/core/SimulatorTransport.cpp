@@ -158,6 +158,10 @@ QByteArray SimulatorTransport::answerFor(QByteArrayView name) const
         return "NT" + QByteArray::number(m_notchMode) + (m_notchWide ? '1' : '0');
     if (name == "BP")
         return "BP" + digits(m_notchPosition, 3);
+    if (name == "GC")   // not available in FM
+        return m_mode == Mode::FM ? QByteArray() : "GC" + QByteArray::number(m_agc);
+    if (name == "GT")   // only with AGC on, and not in FM
+        return m_mode == Mode::FM || m_agc == 0 ? QByteArray() : "GT" + digits(m_agcTimes[m_agc], 2);
     if (name == "NB")
         return "NB" + QByteArray::number(m_noiseBlanker);
     if (name == "NL")   // only while exactly one blanker is on
@@ -371,6 +375,30 @@ void SimulatorTransport::handle(const QByteArray &command)
             return reply("?");
         m_ritXitOffset = std::clamp(m_ritXitOffset + (name == "RU" ? *hz : -*hz), -kRitXitMaxHz, kRitXitMaxHz);
         return echo(answerFor("IF"));   // AI reports offset changes via IF
+    }
+    if (name == "GC") {
+        const auto value = args.size() == 1 ? number(args) : std::nullopt;
+        if (!value || *value > 3 || m_mode == Mode::FM)
+            return reply("?");
+        if (*value == 3) {
+            // Back on in the mode it had before turning off; no-op while on.
+            if (m_agc == 0)
+                m_agc = m_agcBeforeOff;
+        } else if (*value != 0 && m_agc == 0) {
+            return reply("?");   // like the real radio: GC1/GC2 need AGC on
+        } else {
+            if (*value == 0 && m_agc != 0)
+                m_agcBeforeOff = m_agc;
+            m_agc = *value;
+        }
+        return echo(answerFor("GC"));
+    }
+    if (name == "GT") {
+        const auto value = args.size() == 2 ? number(args) : std::nullopt;
+        if (!value || m_agc == 0 || m_mode == Mode::FM)
+            return reply("?");
+        m_agcTimes[m_agc] = std::clamp(*value, kAgcTimeMin, kAgcTimeMax);
+        return echo(answerFor("GT"));
     }
     if (name == "NB" || name == "NR") {
         const auto value = args.size() == 1 ? number(args) : std::nullopt;

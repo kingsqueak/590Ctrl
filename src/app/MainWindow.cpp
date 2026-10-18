@@ -184,6 +184,8 @@ MainWindow::MainWindow(QWidget *parent)
     connect(&m_radio, &Radio::vfoSelectionChanged, this, &MainWindow::onVfoSelectionChanged);
     connect(&m_radio, &Radio::modeChanged, this, &MainWindow::onModeChanged);
     connect(&m_radio, &Radio::sMeterChanged, m_sMeter, &SMeter::setValue);
+    // Follows the slider, so the marker moves while dragging too.
+    connect(m_rfSlider, &QSlider::valueChanged, m_sMeter, &SMeter::setRfGain);
     connect(&m_radio, &Radio::txMetersChanged, this, [this] {
         m_sMeter->setTxMeters(m_radio.txMeter(TxMeter::Swr), m_radio.txMeter(TxMeter::Comp),
                               m_radio.txMeter(TxMeter::Alc));
@@ -228,6 +230,7 @@ MainWindow::MainWindow(QWidget *parent)
     connect(&m_radio, &Radio::notchChanged, this, &MainWindow::refreshNotch);
     connect(&m_radio, &Radio::noiseBlankerChanged, this, &MainWindow::refreshNoise);
     connect(&m_radio, &Radio::noiseReductionChanged, this, &MainWindow::refreshNoise);
+    connect(&m_radio, &Radio::agcChanged, this, &MainWindow::refreshAgc);
     connect(&m_radio, &Radio::notchPositionChanged, this, follow(m_notchSlider));
     connect(&m_radio, &Radio::txFilterChanged, this, [this](TxFilter filter) {
         QComboBox *combo = m_txFilterCombos[int(filter)];
@@ -629,6 +632,25 @@ QWidget *MainWindow::createOperatePage()
         refreshNoise();
     });
 
+    // AGC: OFF -> SLOW -> FAST -> OFF. Slow and fast each keep their own time
+    // constant, so the slider shows whichever is active.
+    m_agcValue = new QLabel;
+    createNoiseRow(m_agcButton, m_agcSlider, m_agcValue);
+    m_agcButton->setToolTip(tr("AGC: OFF → SLOW → FAST (not available in FM)"));
+    m_agcSlider->setRange(kAgcTimeMin, kAgcTimeMax);
+    m_agcSlider->setToolTip(tr("AGC time constant for the active mode (slow or fast)"));
+    connect(m_agcSlider, &QSlider::valueChanged, this, [this](int value) {
+        if (m_radio.agc() != Agc::Off)
+            m_agcValue->setNum(value);
+        if (!m_applyingRadioState)
+            m_radio.setAgcTimeConstant(value);
+    });
+    connect(m_agcButton, &QPushButton::clicked, this, [this] {
+        static constexpr Agc next[] = {Agc::Slow, Agc::Fast, Agc::Off};
+        m_radio.setAgc(next[int(m_radio.agc())]);
+        refreshAgc();   // undo the button's own toggle until the radio answers
+    });
+
     m_filterA = new QRadioButton(tr("Filter A"));
     m_filterB = new QRadioButton(tr("Filter B"));
     connect(m_filterA, &QRadioButton::clicked, this, [this] { m_radio.setFilterSlot(FilterSlot::A); });
@@ -1010,17 +1032,21 @@ void MainWindow::onStateChanged(Radio::State state)
         refreshRitXit();
         refreshNotch();
         refreshNoise();
+        refreshAgc();
         refreshMonitor();
         refreshAntenna();
         refreshFrontEnd();
         break;
     case Radio::State::Connecting: m_radioInfo->setText(tr("Connecting…")); break;
     case Radio::State::Connected:
+        // The slider may already hold this value, so it won't signal a change.
+        m_sMeter->setRfGain(m_rfSlider->value());
         onModeChanged(m_radio.mode(), m_radio.dataMode());
         onVfoSelectionChanged(m_radio.rxVfo(), m_radio.txVfo());
         refreshRitXit();
         refreshNotch();
         refreshNoise();
+        refreshAgc();
         refreshMonitor();
         refreshAntenna();
         refreshFrontEnd();
@@ -1054,6 +1080,7 @@ void MainWindow::onModeChanged(Mode mode, bool data)
     m_txEq->setEqMode(m_radio.eqMode());
     refreshNotch();
     refreshNoise();
+    refreshAgc();
 }
 
 void MainWindow::onVfoSelectionChanged(Vfo rx, Vfo tx)
@@ -1217,6 +1244,21 @@ void MainWindow::refreshFrontEnd()
     const bool pre = connected && m_radio.preamp();
     m_attenuatorButton->setText(pre && !att ? tr("PRE") : tr("ATT"));
     m_attenuatorButton->setChecked(att || pre);
+}
+
+void MainWindow::refreshAgc()
+{
+    const bool available = m_radio.state() == Radio::State::Connected && agcSupported(m_radio.mode());
+    const Agc agc = available ? m_radio.agc() : Agc::Off;
+    m_agcButton->setText(agcName(agc));
+    m_agcButton->setChecked(agc != Agc::Off);
+    m_agcButton->setEnabled(available);
+    m_agcSlider->setEnabled(agc != Agc::Off);
+    m_applyingRadioState = true;
+    if (const auto value = m_radio.agcTimeConstant(); value && agc != Agc::Off && !m_agcSlider->isSliderDown())
+        m_agcSlider->setValue(*value);
+    m_applyingRadioState = false;
+    m_agcValue->setText(agc == Agc::Off ? QString() : QString::number(m_agcSlider->value()));
 }
 
 void MainWindow::showMessage(const QString &text)

@@ -80,6 +80,11 @@ constexpr int sMeterDotsForS(int sUnits) { return (sUnits + 1) * 3 / 2; }   // S
 constexpr int sMeterDotsForDbOverS9(int db) { return kSMeterS9Dots + db / 4; }
 QString sMeterText(int dots);   // "S0".."S9", "S9+4".."S9+60"
 
+// Where an RF gain setting (0..255) sits on the S-meter scale, in dots.
+// Assumed linear (255 = full gain = 0 dots, 0 = full scale); not calibrated
+// against the radio's display yet.
+double rfGainMeterDots(int level);
+
 // Transmit meters (RM). Reading "RM;" answers all three at once, 0..30 dots each.
 enum class TxMeter : int { Swr = 1, Comp = 2, Alc = 3 };
 
@@ -111,6 +116,15 @@ enum class NoiseReduction : int { Off = 0, NR1 = 1, NR2 = 2 };
 bool nr2Supported(Mode mode);            // not in FM
 std::pair<int, int> nrLevelRange(NoiseReduction nr);
 QString noiseReductionName(NoiseReduction nr);
+
+// AGC (GC) and its time constant (GT, 1..20). Slow and fast keep separate
+// time constants; GT applies to whichever is on and is rejected while AGC is
+// off. Neither works in FM.
+enum class Agc : int { Off = 0, Slow = 1, Fast = 2 };
+constexpr int kAgcTimeMin = 1;
+constexpr int kAgcTimeMax = 20;
+bool agcSupported(Mode mode);
+QString agcName(Agc agc);
 
 // Transmit audio filters, set through EX menus as an index into a table.
 enum class TxFilter : int { SsbLowCut = 0, SsbHighCut = 1, SsbDataLowCut = 2, SsbDataHighCut = 3 };
@@ -224,6 +238,11 @@ QByteArray startTuning();
 QByteArray stopTuning(bool rxIn);
 QByteArray notch(NotchMode mode, bool wide);     // NT; `wide` only counts in Manual
 QByteArray noiseBlanker(NoiseBlanker nb);        // NB
+QByteArray agc(Agc agc);                         // GC
+// GC3: the only way to turn AGC back on from off (the radio rejects GC1/GC2
+// then); it returns to whichever of slow/fast was active before.
+QByteArray agcResume();
+QByteArray agcTimeConstant(int value);           // GT
 QByteArray nbLevel(int level);                   // NL
 QByteArray noiseReduction(NoiseReduction nr);    // NR
 QByteArray nrLevel(NoiseReduction nr, int level);   // RL, clamped for nr

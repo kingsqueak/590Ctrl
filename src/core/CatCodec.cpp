@@ -150,6 +150,26 @@ QString swrText(int dots)
     return swr ? QString::number(*swr, 'f', 1) : QStringLiteral(">3");
 }
 
+double rfGainMeterDots(int level)
+{
+    return (255 - std::clamp(level, 0, 255)) * double(kSMeterMaxDots) / 255;
+}
+
+bool agcSupported(Mode mode)
+{
+    return mode != Mode::FM;
+}
+
+QString agcName(Agc agc)
+{
+    switch (agc) {
+    case Agc::Slow: return QStringLiteral("AGC-S");
+    case Agc::Fast: return QStringLiteral("AGC-F");
+    case Agc::Off: break;
+    }
+    return QStringLiteral("AGC");
+}
+
 bool noiseBlankerSupported(Mode mode)
 {
     return mode != Mode::FM;
@@ -365,6 +385,12 @@ QByteArray notch(NotchMode mode, bool wide)
 {
     return "NT" + QByteArray::number(int(mode)) + (mode == NotchMode::Manual && wide ? "1;" : "0;");
 }
+
+QByteArray agc(Agc agc) { return "GC" + QByteArray::number(int(agc)) + ';'; }
+
+QByteArray agcResume() { return "GC3;"; }
+
+QByteArray agcTimeConstant(int value) { return "GT" + digits(std::clamp(value, kAgcTimeMin, kAgcTimeMax), 2) + ';'; }
 
 QByteArray noiseBlanker(NoiseBlanker nb) { return "NB" + QByteArray::number(int(nb)) + ';'; }
 

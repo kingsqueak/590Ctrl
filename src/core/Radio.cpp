@@ -203,6 +203,8 @@ void Radio::resetRadioState()
     m_nbLevel.reset();
     m_noiseReduction = NoiseReduction::Off;
     m_nrLevel.reset();
+    m_agc = Agc::Off;
+    m_agcTime.reset();
     for (auto &perType : m_eqCurves) {
         for (auto &curve : perType)
             curve.reset();
@@ -256,6 +258,9 @@ void Radio::requestFullState()
 
 void Radio::requestModeDependentState()
 {
+    // AGC isn't available in FM (the radio rejects GC), so read it per mode.
+    if (agcSupported(m_mode))
+        m_link.query("GC;");
     m_link.query("FL;");
     requestFilterValues();
     refreshEq();
@@ -418,6 +423,24 @@ void Radio::handleFrame(const QByteArray &frame)
             if (nbLevelAdjustable(m_noiseBlanker))
                 m_link.query("NL;");
             emit noiseBlankerChanged();
+        }
+    } else if (name == "GC" && frame.size() == 3) {
+        const int value = frame[2] - '0';
+        if (value < 0 || value > 2)
+            return;
+        if (Agc(value) != m_agc) {
+            m_agc = Agc(value);
+            // Slow and fast keep their own time constants; fetch the active one.
+            m_agcTime.reset();
+            if (m_agc != Agc::Off)
+                m_link.query("GT;");
+            emit agcChanged();
+        }
+    } else if (name == "GT" && frame.size() == 4) {
+        const auto value = numberAt(frame, 2);
+        if (value && m_agcTime != *value) {
+            m_agcTime = *value;
+            emit agcChanged();
         }
     } else if (name == "NL" && frame.size() == 5) {
         const auto level = numberAt(frame, 2);
@@ -619,6 +642,9 @@ void Radio::handleRejected(const QByteArray &command, char code)
         emit transmitChanged(false);
         return;
     }
+    // AGC reads are refused in FM / with AGC off; that's expected, not an error.
+    if (command == "GC;" || command == "GT;")
+        return;
     if (command == cmd::startTuning()) {
         emit message(tr("The radio refused to start tuning (the tuner may not cover this band)."));
         m_link.query("AC;");
@@ -807,6 +833,28 @@ void Radio::setNotchPosition(int position)
     m_notchPosition = std::clamp(position, 0, kNotchPositionMax);
     m_link.send(cmd::notchPosition(*m_notchPosition), "BP");
     m_link.query("BP;");
+}
+
+void Radio::setAgc(Agc agc)
+{
+    if (!agcSupported(m_mode))
+        return;
+    // From off, the radio only accepts GC3 (back on in its previous slow/fast
+    // mode); GC1/GC2 are rejected until AGC is on. No coalescing key on GC3,
+    // so it can't be merged away by the GC1/GC2 that follows.
+    if (m_agc == Agc::Off && agc != Agc::Off)
+        m_link.send(cmd::agcResume());
+    m_link.send(cmd::agc(agc), "GC");
+    m_link.query("GC;");
+}
+
+void Radio::setAgcTimeConstant(int value)
+{
+    if (m_agc == Agc::Off || !agcSupported(m_mode))
+        return;
+    m_agcTime = std::clamp(value, kAgcTimeMin, kAgcTimeMax);
+    m_link.send(cmd::agcTimeConstant(*m_agcTime), "GT");
+    m_link.query("GT;");
 }
 
 void Radio::setNoiseBlanker(NoiseBlanker nb)

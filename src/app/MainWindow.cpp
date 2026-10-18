@@ -113,7 +113,7 @@ MainWindow::MainWindow(QWidget *parent)
     , m_eqPresets(QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + QStringLiteral("/eq-presets"))
     , m_eqAutoLoader(&m_radio, &m_eqPresets)
 {
-    setWindowTitle(QStringLiteral("590Ctrl"));
+    setWindowTitle(QStringLiteral("590Ctrl %1").arg(QCoreApplication::applicationVersion()));
 
     addToolBar(Qt::TopToolBarArea, [this] {
         auto *bar = new QToolBar(tr("Connection"));
@@ -173,6 +173,13 @@ MainWindow::MainWindow(QWidget *parent)
             saveAppearance(appearance);
         });
     }
+
+    // On macOS the About roles move these into the application menu.
+    QMenu *helpMenu = menuBar()->addMenu(tr("&Help"));
+    QAction *aboutAction = helpMenu->addAction(tr("About 590Ctrl"), this, &MainWindow::showAbout);
+    aboutAction->setMenuRole(QAction::AboutRole);
+    QAction *aboutQtAction = helpMenu->addAction(tr("About Qt"), qApp, &QApplication::aboutQt);
+    aboutQtAction->setMenuRole(QAction::AboutQtRole);
 
     m_radioInfo = new QLabel;
     statusBar()->addPermanentWidget(m_radioInfo);
@@ -2044,6 +2051,20 @@ void MainWindow::logContact()
                      .arg(call, qrz::adifBand(qso.txHz), m_qrzMode->currentText().toUpper(),
                           qso.timeOn.toString(QStringLiteral("HH:mm"))));
     m_qrz.insertQso(qrz::adifRecord(qso));
+}
+
+void MainWindow::showAbout()
+{
+    QMessageBox::about(
+        this, tr("About 590Ctrl"),
+        // The macOS style draws message box text bold; only the heading should be.
+        tr("<h3>590Ctrl %1</h3><div style=\"font-weight:normal\">"
+           "<p>Control for the Kenwood TS-590SG over USB.</p>"
+           "<p>Copyright © 2026 KC2RGW Chris Esser<br>"
+           "Licensed under the GNU General Public License v3.0.</p>"
+           "<p><a href=\"https://github.com/kingsqueak/590Ctrl\">github.com/kingsqueak/590Ctrl</a></p>"
+           "<p><small>Built with Qt %2, running on Qt %3.</small></p></div>")
+            .arg(QCoreApplication::applicationVersion(), QStringLiteral(QT_VERSION_STR), QString::fromLatin1(qVersion())));
 }
 
 void MainWindow::showMessage(const QString &text)

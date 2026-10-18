@@ -85,6 +85,7 @@ private:
     void refreshFrontEnd();   // ATT / PRE button
     void refreshEq(ts590::EqType type);
     void showMessage(const QString &text);
+    void showAbout();
 
     ts590::Radio m_radio;
     ts590::EqPresetLibrary m_eqPresets;

@@ -5,7 +5,7 @@ macOS and Linux. Written in C++20 with Qt 6.
 
 ![590Ctrl connected to a TS-590SG](docs/screenshot.png)
 
-Version 0.10 · Licensed under the [GPL-3.0](LICENSE).
+Version 0.11 · Licensed under the [GPL-3.0](LICENSE).
 
 ## Features
 
@@ -83,9 +83,11 @@ Version 0.10 · Licensed under the [GPL-3.0](LICENSE).
 
 ## Installing on macOS
 
-Download `590Ctrl-0.10.dmg` from the
+Download `590Ctrl-0.11.dmg` from the
 [Releases](https://github.com/kingsqueak/590Ctrl/releases) page, open it, and
-drag **590Ctrl** to **Applications**. It runs on macOS 26.0 or later, on both
+drag **590Ctrl-0.11** to **Applications**. The app's name carries its version;
+delete the older copy (0.10 was plain `590Ctrl.app`) once the new
+one runs. Settings are kept. It runs on macOS 26.0 or later, on both
 Apple silicon and Intel Macs.
 
 The app isn't notarized by Apple, so the first launch is blocked. Open it
@@ -93,7 +95,7 @@ once, then go to **System Settings → Privacy & Security** and click **Open
 Anyway**. Alternatively, run:
 
 ```sh
-xattr -dr com.apple.quarantine /Applications/590Ctrl.app
+xattr -dr com.apple.quarantine /Applications/590Ctrl-0.11.app
 ```
 
 ## Building from source
@@ -162,12 +164,13 @@ self-contained and support older macOS versions. One way to get them is
 python3 -m venv aqtenv && ./aqtenv/bin/pip install aqtinstall
 ./aqtenv/bin/aqt install-qt mac desktop 6.12.0 clang_64 -m qtserialport -O ~/Qt
 
-cmake -S . -B build-release -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF \
-      -DCMAKE_PREFIX_PATH=~/Qt/6.12.0/macos \
-      -DCMAKE_OSX_DEPLOYMENT_TARGET=26.0 -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
-cmake --build build-release
-~/Qt/6.12.0/macos/bin/macdeployqt build-release/590Ctrl.app -dmg
+scripts/make-dmg.sh ~/Qt/6.12.0/macos
 ```
+
+The script builds a universal (arm64 + x86_64) release for macOS 26.0+, runs
+`macdeployqt`, names the bundle `590Ctrl-<version>.app`, signs it ad hoc,
+checks that every binary runs on macOS 26 and links only inside the bundle,
+and writes `build-release/590Ctrl-<version>.dmg`.
 
 ## Connecting the radio
 

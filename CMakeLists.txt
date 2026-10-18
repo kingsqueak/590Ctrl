@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(590Ctrl VERSION 0.10 DESCRIPTION "Kenwood TS-590SG control" LANGUAGES CXX)
+project(590Ctrl VERSION 0.11 DESCRIPTION "Kenwood TS-590SG control" LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -40,12 +40,17 @@ qt_add_executable(590Ctrl
     src/app/SMeter.h src/app/SMeter.cpp
     src/app/PowerButton.h src/app/PowerButton.cpp
     src/app/AppStyle.h src/app/AppStyle.cpp
+    resources/590Ctrl.icns
 )
+# Dock/Finder icon on macOS; the PNG is the window icon elsewhere.
+set_source_files_properties(resources/590Ctrl.icns PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+qt_add_resources(590Ctrl "icon" PREFIX "/" FILES resources/590Ctrl.png)
 target_link_libraries(590Ctrl PRIVATE ts590core Qt6::Widgets)
 target_compile_definitions(590Ctrl PRIVATE PROJECT_VERSION="${PROJECT_VERSION}")
 set_target_properties(590Ctrl PROPERTIES
     MACOSX_BUNDLE ON
     MACOSX_BUNDLE_BUNDLE_NAME 590Ctrl
+    MACOSX_BUNDLE_ICON_FILE 590Ctrl.icns
     MACOSX_BUNDLE_GUI_IDENTIFIER com.radiopathology.590ctrl
     MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION}
     MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}

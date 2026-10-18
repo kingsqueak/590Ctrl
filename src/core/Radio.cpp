@@ -92,6 +92,9 @@ void Radio::teardown()
     m_powerFine = false;
     for (auto &filter : m_txFilters)
         filter.reset();
+    m_notchMode = NotchMode::Off;
+    m_notchWide = false;
+    m_notchPosition.reset();
     for (auto &perType : m_eqCurves) {
         for (auto &curve : perType)
             curve.reset();
@@ -136,7 +139,7 @@ void Radio::requestFullState()
     }
     for (int menu : menus.txFilter)
         m_link.query(cmd::readMenu(menu));
-    for (const char *read : {"FA;", "FB;", "FR;", "FT;", "IF;", "RT;", "XT;", "DA;", "AG0;", "SQ0;", "RG;", "PC;"})
+    for (const char *read : {"FA;", "FB;", "FR;", "FT;", "IF;", "RT;", "XT;", "DA;", "AG0;", "SQ0;", "RG;", "PC;", "NT;", "BP;"})
         m_link.query(read);
     if (m_modelId == kModelTs590SG)
         m_link.query("TP;");
@@ -255,6 +258,20 @@ void Radio::handleFrame(const QByteArray &frame)
                 emit txPowerChanged(*watts);
             else
                 emit tunePowerChanged(*watts);
+        }
+    } else if (name == "NT" && frame.size() == 4) {
+        const NotchMode mode = frame[2] == '1' ? NotchMode::Auto : frame[2] == '2' ? NotchMode::Manual : NotchMode::Off;
+        const bool wide = frame[3] == '1';
+        if (mode != m_notchMode || wide != m_notchWide) {
+            m_notchMode = mode;
+            m_notchWide = wide;
+            emit notchChanged();
+        }
+    } else if (name == "BP" && frame.size() == 5) {
+        const auto position = numberAt(frame, 2);
+        if (position && m_notchPosition != *position) {
+            m_notchPosition = *position;
+            emit notchPositionChanged(*position);
         }
     } else if (name == "AG" && frame.size() == 6) {
         if (const auto v = numberAt(frame, 3))
@@ -524,6 +541,23 @@ void Radio::setTunePower(int watts)
 {
     if (m_modelId == kModelTs590SG)
         setPower(&cmd::tunePower, m_tunePower, watts, kTxPowerMax);   // TX tune isn't limited in AM
+}
+
+void Radio::setNotch(NotchMode mode, bool wide)
+{
+    if (!notchSupported(m_mode))
+        return;
+    m_link.send(cmd::notch(mode, wide), "NT");
+    m_link.query("NT;");
+}
+
+void Radio::setNotchPosition(int position)
+{
+    if (!notchSupported(m_mode))
+        return;
+    m_notchPosition = std::clamp(position, 0, kNotchPositionMax);
+    m_link.send(cmd::notchPosition(*m_notchPosition), "BP");
+    m_link.query("BP;");
 }
 
 void Radio::setMode(Mode mode)

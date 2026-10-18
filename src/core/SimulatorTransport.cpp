@@ -133,6 +133,10 @@ QByteArray SimulatorTransport::answerFor(QByteArrayView name) const
         return m_rit ? "RT1" : "RT0";
     if (name == "XT")
         return m_xit ? "XT1" : "XT0";
+    if (name == "NT")
+        return "NT" + QByteArray::number(m_notchMode) + (m_notchWide ? '1' : '0');
+    if (name == "BP")
+        return "BP" + digits(m_notchPosition, 3);
     if (name == "PC")
         return "PC" + digits(m_txPower, 3);
     if (name == "TP")
@@ -231,6 +235,23 @@ void SimulatorTransport::handle(const QByteArray &command)
             return reply("?");
         m_ritXitOffset = std::clamp(m_ritXitOffset + (name == "RU" ? *hz : -*hz), -kRitXitMaxHz, kRitXitMaxHz);
         return echo(answerFor("IF"));   // AI reports offset changes via IF
+    }
+    if ((name == "NT" || name == "BP") && !notchSupported(m_mode))
+        return reply("?");
+    if (name == "NT") {
+        if (args.size() != 2 || args[0] < '0' || args[0] > '2')
+            return reply("?");
+        m_notchMode = args[0] - '0';
+        // P2 is ignored unless manual, and always answers 0 otherwise.
+        m_notchWide = m_notchMode == 2 && args[1] == '1';
+        return echo(answerFor("NT"));
+    }
+    if (name == "BP") {
+        const auto position = number(args);
+        if (!position || args.size() != 3)
+            return reply("?");
+        m_notchPosition = std::min(*position, kNotchPositionMax);
+        return echo(answerFor("BP"));
     }
     if (name == "PC" || name == "TP") {
         auto watts = number(args);

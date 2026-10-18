@@ -38,6 +38,7 @@ private:
     QWidget *createOperatePage();
     QWidget *createRitXitGroup();
     QWidget *createTxFilterGroup();
+    QWidget *createNotchGroup();
     QWidget *createTransmitGroup();
     QWidget *createEqualizerPage();
     QSlider *createLevelSlider(void (ts590::Radio::*setter)(int), int maximum = 255);
@@ -49,6 +50,7 @@ private:
     void onVfoSelectionChanged(ts590::Vfo rx, ts590::Vfo tx);
     void refreshFilters();
     void refreshRitXit();
+    void refreshNotch();
     void refreshEq(ts590::EqType type);
     void showMessage(const QString &text);
 
@@ -94,6 +96,11 @@ private:
     QComboBox *m_filterCombos[2] = {};
     ts590::FilterLayout m_filterLayout;
     QComboBox *m_txFilterCombos[ts590::kTxFilterCount] = {};
+
+    QPushButton *m_autoNotchButton = nullptr;
+    QPushButton *m_manualNotchButton = nullptr;
+    QCheckBox *m_notchWideCheck = nullptr;
+    QSlider *m_notchSlider = nullptr;
 
     EqualizerPanel *m_rxEq = nullptr;
     EqualizerPanel *m_txEq = nullptr;

@@ -65,6 +65,12 @@ constexpr int kTxPowerMax = 100;
 constexpr int kTxPowerMaxAm = 25;
 int txPowerMax(Mode mode);
 
+// Notch filter (NT); the manual notch position (BP) has no documented Hz scale.
+enum class NotchMode : int { Off = 0, Auto = 1, Manual = 2 };
+constexpr int kNotchPositionMax = 127;
+// The radio rejects NT/BP in FM (checked on a TS-590SG); CW etc. are fine.
+bool notchSupported(Mode mode);
+
 // Transmit audio filters, set through EX menus as an index into a table.
 enum class TxFilter : int { SsbLowCut = 0, SsbHighCut = 1, SsbDataLowCut = 2, SsbDataHighCut = 3 };
 constexpr int kTxFilterCount = 4;
@@ -159,6 +165,8 @@ QByteArray xit(bool on);                         // XT
 QByteArray ritXitOffset(int hz);
 QByteArray txPower(int watts);                   // PC
 QByteArray tunePower(int watts);                 // TP (TS-590SG only)
+QByteArray notch(NotchMode mode, bool wide);     // NT; `wide` only counts in Manual
+QByteArray notchPosition(int position);          // BP, 0..127
 QByteArray mode(Mode mode);                      // MD
 QByteArray dataMode(bool on);                    // DA
 QByteArray afGain(int level);                    // AG (0..255)

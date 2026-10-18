@@ -94,6 +94,11 @@ const QList<int> &txFilterValuesHz(TxFilter filter)
     return filter == TxFilter::SsbLowCut || filter == TxFilter::SsbDataLowCut ? lowCut : highCut;
 }
 
+bool notchSupported(Mode mode)
+{
+    return mode != Mode::FM;
+}
+
 int txPowerMax(Mode mode)
 {
     return mode == Mode::AM ? kTxPowerMaxAm : kTxPowerMax;
@@ -253,6 +258,13 @@ QByteArray ritXitOffset(int hz)
 }
 
 QByteArray txPower(int watts) { return "PC" + digits(std::clamp(watts, kTxPowerMin, kTxPowerMax), 3) + ';'; }
+
+QByteArray notch(NotchMode mode, bool wide)
+{
+    return "NT" + QByteArray::number(int(mode)) + (mode == NotchMode::Manual && wide ? "1;" : "0;");
+}
+
+QByteArray notchPosition(int position) { return "BP" + digits(std::clamp(position, 0, kNotchPositionMax), 3) + ';'; }
 
 QByteArray tunePower(int watts) { return "TP" + digits(std::clamp(watts, kTxPowerMin, kTxPowerMax), 3) + ';'; }
 

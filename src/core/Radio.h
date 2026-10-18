@@ -59,6 +59,9 @@ public:
     bool powerFine() const { return m_powerFine; }   // 1 W steps; otherwise 5 W
     // Index into txFilterValuesHz(filter); nullopt until read.
     std::optional<int> txFilter(TxFilter filter) const { return m_txFilters[int(filter)]; }
+    NotchMode notchMode() const { return m_notchMode; }
+    bool notchWide() const { return m_notchWide; }   // manual notch bandwidth
+    std::optional<int> notchPosition() const { return m_notchPosition; }
 
     FilterSlot filterSlot() const { return m_filterSlot; }
     FilterLayout filterLayout() const;
@@ -89,6 +92,8 @@ public:
     void setTxPower(int watts);
     void setTunePower(int watts);
     void setTxFilter(TxFilter filter, int index);
+    void setNotch(NotchMode mode, bool wide);
+    void setNotchPosition(int position);
     void setFilterSlot(FilterSlot slot);
     void setFilterValue(FilterCommand command, int raw);
     // Selects the curve for the current mode family.
@@ -118,6 +123,8 @@ signals:
     void tunePowerChanged(int watts);
     void powerFineChanged(bool fine);
     void txFilterChanged(ts590::TxFilter filter);
+    void notchChanged();   // mode or bandwidth
+    void notchPositionChanged(int position);
     void sMeterChanged(int dots);
     void transmitChanged(bool transmitting);
     // Slot, layout or values changed.
@@ -181,6 +188,9 @@ private:
     std::optional<int> m_tunePower;
     bool m_powerFine = false;
     std::optional<int> m_txFilters[kTxFilterCount];
+    NotchMode m_notchMode = NotchMode::Off;
+    bool m_notchWide = false;
+    std::optional<int> m_notchPosition;
 
     FilterSlot m_filterSlot = FilterSlot::A;
     bool m_ssbWidthShift = false;       // EX028

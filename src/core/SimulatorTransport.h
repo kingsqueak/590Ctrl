@@ -38,6 +38,9 @@ public:
     int ritXitOffset() const { return m_ritXitOffset; }
     int txPower() const { return m_txPower; }
     int tunePower() const { return m_tunePower; }
+    int notchMode() const { return m_notchMode; }
+    bool notchWide() const { return m_notchWide; }
+    int notchPosition() const { return m_notchPosition; }
     void setUnresponsive(bool on) { m_unresponsive = on; }
 
 private:
@@ -75,6 +78,9 @@ private:
     int m_ritXitOffset = 0;
     int m_txPower = 100;
     int m_tunePower = 10;
+    int m_notchMode = 0;
+    bool m_notchWide = false;
+    int m_notchPosition = 64;
     QHash<int, int> m_menus;
     EqCurve m_eqCurves[2][8] = {};
     EqLevels m_eqLevels[2];

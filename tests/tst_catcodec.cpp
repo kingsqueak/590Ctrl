@@ -58,6 +58,16 @@ private slots:
         QCOMPARE(txPowerMax(Mode::USB), 100);
     }
 
+    void encodesNotch()
+    {
+        QCOMPARE(cmd::notch(NotchMode::Off, true), QByteArray("NT00;"));
+        QCOMPARE(cmd::notch(NotchMode::Auto, true), QByteArray("NT10;"));
+        QCOMPARE(cmd::notch(NotchMode::Manual, false), QByteArray("NT20;"));
+        QCOMPARE(cmd::notch(NotchMode::Manual, true), QByteArray("NT21;"));
+        QCOMPARE(cmd::notchPosition(7), QByteArray("BP007;"));
+        QCOMPARE(cmd::notchPosition(500), QByteArray("BP127;"));
+    }
+
     void menuNumbersDependOnModel()
     {
         const MenuNumbers sg = menuNumbersFor(kModelTs590SG);

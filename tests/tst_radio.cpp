@@ -175,6 +175,39 @@ private slots:
         QCOMPARE(txFilterValuesHz(TxFilter::SsbDataLowCut).value(5), 500);
     }
 
+    void notch()
+    {
+        Radio radio;
+        SimulatorTransport *sim = connectSim(radio);
+        QCOMPARE(radio.notchMode(), NotchMode::Off);
+        QCOMPARE(radio.notchPosition(), std::optional(64));
+
+        radio.setNotch(NotchMode::Auto, false);
+        QTRY_COMPARE(radio.notchMode(), NotchMode::Auto);
+        QCOMPARE(sim->notchMode(), 1);
+
+        radio.setNotch(NotchMode::Manual, true);
+        QTRY_VERIFY(radio.notchWide());
+        QCOMPARE(radio.notchMode(), NotchMode::Manual);
+
+        radio.setNotchPosition(100);
+        QTRY_COMPARE(sim->notchPosition(), 100);
+
+        radio.setNotch(NotchMode::Off, true);   // wide is meaningless when off
+        QTRY_COMPARE(radio.notchMode(), NotchMode::Off);
+        QVERIFY(!radio.notchWide());
+
+        // Not available in FM: Radio doesn't send it, so nothing is rejected.
+        radio.setMode(Mode::FM);
+        QTRY_COMPARE(radio.mode(), Mode::FM);
+        QTRY_COMPARE(radio.link()->pendingCount(), 0);
+        QSignalSpy messages(&radio, &Radio::message);
+        radio.setNotch(NotchMode::Auto, false);
+        QTest::qWait(50);
+        QCOMPARE(sim->notchMode(), 0);
+        QCOMPARE(messages.size(), 0);
+    }
+
     void modeChangeRefreshesFilterLayout()
     {
         Radio radio;

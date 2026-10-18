@@ -149,6 +149,8 @@ MainWindow::MainWindow(QWidget *parent)
     connect(&m_radio, &Radio::txPowerChanged, this, follow(m_txPowerSlider));
     connect(&m_radio, &Radio::tunePowerChanged, this, follow(m_tunePowerSlider));
     connect(&m_radio, &Radio::ritXitChanged, this, &MainWindow::refreshRitXit);
+    connect(&m_radio, &Radio::notchChanged, this, &MainWindow::refreshNotch);
+    connect(&m_radio, &Radio::notchPositionChanged, this, follow(m_notchSlider));
     connect(&m_radio, &Radio::txFilterChanged, this, [this](TxFilter filter) {
         QComboBox *combo = m_txFilterCombos[int(filter)];
         combo->setCurrentIndex(m_radio.txFilter(filter).value_or(-1));
@@ -407,6 +409,7 @@ QWidget *MainWindow::createOperatePage()
     auto *middle = new QVBoxLayout;
     middle->addWidget(filters);
     middle->addWidget(createTxFilterGroup());
+    middle->addWidget(createNotchGroup());
     middle->addStretch();
 
     auto *page = new QWidget;
@@ -440,6 +443,50 @@ QWidget *MainWindow::createTxFilterGroup()
     }
     layout->setColumnStretch(1, 1);
     layout->setColumnStretch(2, 1);
+    return group;
+}
+
+QWidget *MainWindow::createNotchGroup()
+{
+    m_autoNotchButton = new QPushButton(tr("AUTO"));
+    m_autoNotchButton->setCheckable(true);
+    m_autoNotchButton->setToolTip(tr("Auto notch: tracks and removes a carrier"));
+    connect(m_autoNotchButton, &QPushButton::clicked, this, [this](bool on) {
+        m_radio.setNotch(on ? NotchMode::Auto : NotchMode::Off, m_notchWideCheck->isChecked());
+    });
+    m_manualNotchButton = new QPushButton(tr("MANUAL"));
+    m_manualNotchButton->setCheckable(true);
+    m_manualNotchButton->setToolTip(tr("Manual notch at the position set below"));
+    connect(m_manualNotchButton, &QPushButton::clicked, this, [this](bool on) {
+        m_radio.setNotch(on ? NotchMode::Manual : NotchMode::Off, m_notchWideCheck->isChecked());
+    });
+    m_notchWideCheck = new QCheckBox(tr("Wide"));
+    m_notchWideCheck->setToolTip(tr("Manual notch bandwidth"));
+    connect(m_notchWideCheck, &QCheckBox::clicked, this,
+            [this](bool wide) { m_radio.setNotch(NotchMode::Manual, wide); });
+
+    m_notchSlider = new QSlider(Qt::Horizontal);
+    m_notchSlider->setRange(0, kNotchPositionMax);
+    m_notchSlider->setPageStep(8);
+    m_notchSlider->setToolTip(tr("Manual notch frequency (radio scale 0–127)"));
+    connect(m_notchSlider, &QSlider::valueChanged, this, [this](int position) {
+        if (!m_applyingRadioState)
+            m_radio.setNotchPosition(position);
+    });
+    auto *value = new QLabel(QStringLiteral("0"));
+    value->setMinimumWidth(value->fontMetrics().horizontalAdvance(QStringLiteral("127")) + 4);
+    value->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    connect(m_notchSlider, &QSlider::valueChanged, value, qOverload<int>(&QLabel::setNum));
+
+    auto *group = new QGroupBox(tr("Notch"));
+    auto *layout = new QGridLayout(group);
+    layout->addWidget(m_autoNotchButton, 0, 0);
+    layout->addWidget(m_manualNotchButton, 0, 1);
+    layout->addWidget(m_notchWideCheck, 0, 2);
+    auto *row = new QHBoxLayout;
+    row->addWidget(m_notchSlider, 1);
+    row->addWidget(value);
+    layout->addLayout(row, 1, 0, 1, 3);
     return group;
 }
 
@@ -597,12 +644,14 @@ void MainWindow::onStateChanged(Radio::State state)
         m_txIndicator->setEnabled(false);
         onVfoSelectionChanged(Vfo::A, Vfo::A);
         refreshRitXit();
+        refreshNotch();
         break;
     case Radio::State::Connecting: m_radioInfo->setText(tr("Connecting…")); break;
     case Radio::State::Connected:
         onModeChanged(m_radio.mode(), m_radio.dataMode());
         onVfoSelectionChanged(m_radio.rxVfo(), m_radio.txVfo());
         refreshRitXit();
+        refreshNotch();
         break;
     }
 }
@@ -631,6 +680,7 @@ void MainWindow::onModeChanged(Mode mode, bool data)
     m_dataCheck->setEnabled(m_radio.state() == Radio::State::Connected && modeSupportsData(mode));
     m_rxEq->setEqMode(m_radio.eqMode());
     m_txEq->setEqMode(m_radio.eqMode());
+    refreshNotch();
 }
 
 void MainWindow::onVfoSelectionChanged(Vfo rx, Vfo tx)
@@ -712,6 +762,25 @@ void MainWindow::refreshRitXit()
     m_applyingRadioState = true;
     m_offsetSpin->setValue(connected ? m_radio.ritXitOffset() : 0);
     m_applyingRadioState = false;
+}
+
+void MainWindow::refreshNotch()
+{
+    const bool connected = m_radio.state() == Radio::State::Connected;
+    const NotchMode mode = connected ? m_radio.notchMode() : NotchMode::Off;
+    m_autoNotchButton->setChecked(mode == NotchMode::Auto);
+    m_manualNotchButton->setChecked(mode == NotchMode::Manual);
+    const bool available = connected && notchSupported(m_radio.mode());
+    m_autoNotchButton->setEnabled(available);
+    m_manualNotchButton->setEnabled(available);
+    // Bandwidth and position only apply to the manual notch.
+    const bool manual = available && mode == NotchMode::Manual;
+    m_notchWideCheck->setEnabled(manual);
+    // Outside manual the radio always reports "normal"; keep the user's last
+    // choice so re-enabling manual restores it.
+    if (manual)
+        m_notchWideCheck->setChecked(m_radio.notchWide());
+    m_notchSlider->setEnabled(manual);
 }
 
 void MainWindow::showMessage(const QString &text)

@@ -82,6 +82,15 @@ void SimulatorTransport::write(const QByteArray &data)
     }
 }
 
+void SimulatorTransport::simulateTransmit(bool on, int swr, int comp, int alc)
+{
+    m_transmitting = on;
+    m_txMeters[0] = swr;
+    m_txMeters[1] = comp;
+    m_txMeters[2] = alc;
+    echo(on ? "TX0" : "RX");
+}
+
 void SimulatorTransport::reply(const QByteArray &answer)
 {
     // Answer asynchronously, like a real serial link.
@@ -189,6 +198,12 @@ void SimulatorTransport::handle(const QByteArray &command)
             return;
         }
         return reply("?");
+    }
+    if (name == "RM" && isRead) {
+        // All three meters, as the real radio answers.
+        for (int meter = 0; meter < 3; ++meter)
+            reply("RM" + QByteArray::number(meter + 1) + digits(m_transmitting ? m_txMeters[meter] : 0, 4));
+        return;
     }
     if (name == "SM" && args == "0") {
         m_sMeter = std::clamp(m_sMeter + QRandomGenerator::global()->bounded(-2, 3), 0, 30);

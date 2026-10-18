@@ -4,6 +4,7 @@
 #include "EqualizerPanel.h"
 #include "FrequencyDisplay.h"
 #include "SerialTransport.h"
+#include "SMeter.h"
 #include "SimulatorTransport.h"
 #include "WheelSteps.h"
 
@@ -19,7 +20,6 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMenuBar>
-#include <QProgressBar>
 #include <QPushButton>
 #include <QRadioButton>
 #include <QSettings>
@@ -40,6 +40,7 @@ const QString kSimulatorPort = QStringLiteral("__simulator__");
 constexpr int kMessageTimeoutMs = 8000;
 const QList<qint32> kBaudRates = {9600, 19200, 38400, 57600, 115200};
 
+constexpr int kVfoAPointSize = 36;
 constexpr int kRitXitStepHz = 10;
 constexpr int kOffsetHoldMs = 500;
 
@@ -133,10 +134,14 @@ MainWindow::MainWindow(QWidget *parent)
     });
     connect(&m_radio, &Radio::vfoSelectionChanged, this, &MainWindow::onVfoSelectionChanged);
     connect(&m_radio, &Radio::modeChanged, this, &MainWindow::onModeChanged);
-    connect(&m_radio, &Radio::sMeterChanged, m_sMeter, &QProgressBar::setValue);
+    connect(&m_radio, &Radio::sMeterChanged, m_sMeter, &SMeter::setValue);
+    connect(&m_radio, &Radio::txMetersChanged, this, [this] {
+        m_sMeter->setTxMeters(m_radio.txMeter(TxMeter::Swr), m_radio.txMeter(TxMeter::Comp),
+                              m_radio.txMeter(TxMeter::Alc));
+    });
     connect(&m_radio, &Radio::transmitChanged, this, [this](bool tx) {
         m_txIndicator->setEnabled(tx);
-        m_sMeter->setFormat(tx ? tr("PWR %v/30") : tr("S %v/30"));
+        m_sMeter->setTransmitting(tx);
     });
     auto follow = [this](QSlider *slider) {
         return [this, slider](int value) {
@@ -248,7 +253,7 @@ QWidget *MainWindow::createConnectionBar()
 
 QWidget *MainWindow::createVfoPanel()
 {
-    m_vfoA = new FrequencyDisplay(36);
+    m_vfoA = new FrequencyDisplay(kVfoAPointSize);
     m_vfoA->setLabel(QStringLiteral("A"));
     m_vfoB = new FrequencyDisplay(18);
     m_vfoB->setLabel(QStringLiteral("B"));
@@ -287,11 +292,8 @@ QWidget *MainWindow::createVfoPanel()
         "QLabel:disabled { color: palette(mid); background: transparent; border: 1px solid palette(mid); }"));
     m_txIndicator->setEnabled(false);
 
-    m_sMeter = new QProgressBar;
-    m_sMeter->setRange(0, 30);   // SM answer is in display dots, 0..30
-    m_sMeter->setFormat(tr("S %v/30"));
-    m_sMeter->setTextVisible(true);
-    m_sMeter->setToolTip(tr("Meter in display dots (0–30). S-meter on receive, power on transmit."));
+    // Peak readout at half the size of the main VFO digits.
+    m_sMeter = new SMeter(kVfoAPointSize / 2);
 
     auto *side = new QVBoxLayout;
     side->addWidget(m_sMeter);
@@ -702,7 +704,7 @@ void MainWindow::onStateChanged(Radio::State state)
     switch (state) {
     case Radio::State::Disconnected:
         m_radioInfo->setText(tr("Disconnected"));
-        m_sMeter->setValue(0);
+        m_sMeter->reset();
         m_txIndicator->setEnabled(false);
         onVfoSelectionChanged(Vfo::A, Vfo::A);
         refreshRitXit();

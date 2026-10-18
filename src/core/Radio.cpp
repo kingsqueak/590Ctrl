@@ -35,6 +35,13 @@ Radio::Radio(QObject *parent)
     connect(&m_link, &CatLink::queryTimedOut, this, &Radio::handleTimeout);
     m_meterTimer.setInterval(kMeterIntervalMs);
     connect(&m_meterTimer, &QTimer::timeout, this, &Radio::pollMeter);
+    // Each transmission starts its SWR/COMP/ALC readings from zero.
+    connect(this, &Radio::transmitChanged, this, [this](bool transmitting) {
+        if (transmitting && (m_txMeters[0] || m_txMeters[1] || m_txMeters[2])) {
+            std::fill(std::begin(m_txMeters), std::end(m_txMeters), 0);
+            emit txMetersChanged();
+        }
+    });
 }
 
 Radio::~Radio()
@@ -182,8 +189,12 @@ void Radio::refreshEqLevels(EqType type)
 
 void Radio::pollMeter()
 {
-    if (m_state == State::Connected && m_meterPolling && m_link.pendingCount() < 3)
-        m_link.query("SM0;");
+    if (m_state != State::Connected || !m_meterPolling || m_link.pendingCount() >= 3)
+        return;
+    m_link.query("SM0;");
+    // SWR/COMP/ALC only mean something on transmit; one RM read returns all three.
+    if (m_transmitting)
+        m_link.query("RM;");
 }
 
 // ------------------------------------------------------------------- answers
@@ -324,6 +335,13 @@ void Radio::handleFrame(const QByteArray &frame)
     } else if (name == "SM" && frame.size() == 7) {
         if (const auto v = numberAt(frame, 3))
             update(m_sMeter, *v, &Radio::sMeterChanged);
+    } else if (name == "RM" && frame.size() == 7) {
+        const int meter = frame[2] - '1';
+        const auto dots = numberAt(frame, 3);
+        if (meter >= 0 && meter < 3 && dots && m_txMeters[meter] != *dots) {
+            m_txMeters[meter] = *dots;
+            emit txMetersChanged();
+        }
     } else if (name == "TX") {
         update(m_transmitting, true, &Radio::transmitChanged);
     } else if (name == "RX") {
@@ -458,7 +476,7 @@ void Radio::handleTimeout(const QByteArray &command)
         teardown();
         return;
     }
-    if (command != "SM0;")
+    if (command != "SM0;" && command != "RM;")   // meter polls: next poll will do
         emit message(tr("Radio did not answer %1").arg(QString::fromLatin1(command)));
 }
 

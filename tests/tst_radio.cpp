@@ -252,6 +252,24 @@ private slots:
         QCOMPARE(sim->noiseReduction(), 0);
     }
 
+    void txMetersPolledWhileTransmitting()
+    {
+        Radio radio;
+        SimulatorTransport *sim = connectSim(radio);
+        radio.setMeterPolling(true);
+        QTest::qWait(300);
+        QVERIFY(!sim->received().contains("RM"));   // not polled on receive
+
+        sim->simulateTransmit(true, 4, 12, 9);
+        QTRY_VERIFY(radio.transmitting());
+        QTRY_COMPARE(radio.txMeter(TxMeter::Swr), 4);
+        QTRY_COMPARE(radio.txMeter(TxMeter::Comp), 12);
+        QTRY_COMPARE(radio.txMeter(TxMeter::Alc), 9);
+
+        sim->simulateTransmit(false);
+        QTRY_VERIFY(!radio.transmitting());
+    }
+
     void modeChangeRefreshesFilterLayout()
     {
         Radio radio;

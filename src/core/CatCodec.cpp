@@ -1,6 +1,7 @@
 #include "CatCodec.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 
 namespace ts590 {
@@ -92,6 +93,61 @@ const QList<int> &txFilterValuesHz(TxFilter filter)
     // or a literal "4000"/"5000" on menus 032/034 and keeps its old value.
     static const QList<int> highCut = {2500, 2600, 2700, 2800, 2900, 3000};
     return filter == TxFilter::SsbLowCut || filter == TxFilter::SsbDataLowCut ? lowCut : highCut;
+}
+
+QString sMeterText(int dots)
+{
+    dots = std::clamp(dots, 0, kSMeterMaxDots);
+    if (dots > kSMeterS9Dots)
+        return QStringLiteral("S9+%1").arg((dots - kSMeterS9Dots) * 4);
+    // Two S-units per 3 dots, S1 at 3 dots.
+    const int sUnits = std::max(0, (2 * dots - 3 + 1) / 3);
+    return QStringLiteral("S%1").arg(sUnits);
+}
+
+namespace {
+
+struct CalPoint {
+    int dots;
+    double value;
+};
+
+double interpolate(std::initializer_list<CalPoint> table, int dots)
+{
+    const CalPoint *previous = table.begin();
+    for (const CalPoint &point : table) {
+        if (dots <= point.dots) {
+            if (point.dots == previous->dots)
+                return point.value;
+            const double t = double(dots - previous->dots) / (point.dots - previous->dots);
+            return previous->value + t * (point.value - previous->value);
+        }
+        previous = &point;
+    }
+    return previous->value;
+}
+
+constexpr int kSwrCalibratedDots = 15;
+
+}   // namespace
+
+int txPowerWatts(int dots)
+{
+    dots = std::clamp(dots, 0, kSMeterMaxDots);
+    return int(std::lround(interpolate({{0, 0}, {5, 10}, {10, 25}, {15, 50}, {30, 100}}, dots)));
+}
+
+std::optional<double> swrForDots(int dots)
+{
+    if (dots > kSwrCalibratedDots)
+        return std::nullopt;
+    return interpolate({{0, 1.0}, {5, 1.5}, {10, 2.0}, {15, 3.0}}, std::max(dots, 0));
+}
+
+QString swrText(int dots)
+{
+    const auto swr = swrForDots(dots);
+    return swr ? QString::number(*swr, 'f', 1) : QStringLiteral(">3");
 }
 
 bool noiseBlankerSupported(Mode mode)

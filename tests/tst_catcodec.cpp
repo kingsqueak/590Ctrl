@@ -82,6 +82,40 @@ private slots:
         QVERIFY(!nr2Supported(Mode::FM));
     }
 
+    void sMeterScale()
+    {
+        QCOMPARE(sMeterText(0), QStringLiteral("S0"));
+        QCOMPARE(sMeterText(3), QStringLiteral("S1"));
+        QCOMPARE(sMeterText(6), QStringLiteral("S3"));
+        QCOMPARE(sMeterText(9), QStringLiteral("S5"));
+        QCOMPARE(sMeterText(12), QStringLiteral("S7"));
+        QCOMPARE(sMeterText(15), QStringLiteral("S9"));
+        QCOMPARE(sMeterText(20), QStringLiteral("S9+20"));
+        QCOMPARE(sMeterText(25), QStringLiteral("S9+40"));
+        QCOMPARE(sMeterText(30), QStringLiteral("S9+60"));
+        QCOMPARE(sMeterText(99), QStringLiteral("S9+60"));
+        QCOMPARE(sMeterDotsForS(5), 9);
+        QCOMPARE(sMeterDotsForS(9), 15);
+        QCOMPARE(sMeterDotsForDbOverS9(20), 20);
+    }
+
+    void txMeterCalibration()
+    {
+        QCOMPARE(txPowerWatts(0), 0);
+        QCOMPARE(txPowerWatts(5), 10);
+        QCOMPARE(txPowerWatts(10), 25);
+        QCOMPARE(txPowerWatts(15), 50);
+        QCOMPARE(txPowerWatts(30), 100);
+        QCOMPARE(txPowerWatts(20), 67);    // between 50 W and 100 W
+        QCOMPARE(txPowerWatts(99), 100);
+        QCOMPARE(swrText(0), QStringLiteral("1.0"));
+        QCOMPARE(swrText(5), QStringLiteral("1.5"));
+        QCOMPARE(swrText(10), QStringLiteral("2.0"));
+        QCOMPARE(swrText(12), QStringLiteral("2.4"));
+        QCOMPARE(swrText(15), QStringLiteral("3.0"));
+        QCOMPARE(swrText(16), QStringLiteral(">3"));
+    }
+
     void menuNumbersDependOnModel()
     {
         const MenuNumbers sg = menuNumbersFor(kModelTs590SG);

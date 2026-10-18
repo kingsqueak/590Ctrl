@@ -65,6 +65,24 @@ constexpr int kTxPowerMax = 100;
 constexpr int kTxPowerMaxAm = 25;
 int txPowerMax(Mode mode);
 
+// S-meter (SM): 0..30 display dots. Matches the front-panel scale: S1, S3,
+// S5, S7, S9 every 3 dots (S9 = 15), then +20, +40, +60 dB every 5 dots.
+constexpr int kSMeterMaxDots = 30;
+constexpr int kSMeterS9Dots = 15;
+constexpr int sMeterDotsForS(int sUnits) { return (sUnits + 1) * 3 / 2; }   // S1..S9, odd units exact
+constexpr int sMeterDotsForDbOverS9(int db) { return kSMeterS9Dots + db / 4; }
+QString sMeterText(int dots);   // "S0".."S9", "S9+4".."S9+60"
+
+// Transmit meters (RM). Reading "RM;" answers all three at once, 0..30 dots each.
+enum class TxMeter : int { Swr = 1, Comp = 2, Alc = 3 };
+
+// Meter calibration read off a TS-590SG's display; linear between points.
+// Power (SM while transmitting): 5 = 10 W, 10 = 25 W, 15 = 50 W, 30 = 100 W.
+int txPowerWatts(int dots);
+// SWR: 5 = 1.5, 10 = 2.0, 15 = 3.0. Uncalibrated above 15 dots: nullopt.
+std::optional<double> swrForDots(int dots);
+QString swrText(int dots);   // "1.0".."3.0", ">3"
+
 // Notch filter (NT); the manual notch position (BP) has no documented Hz scale.
 enum class NotchMode : int { Off = 0, Auto = 1, Manual = 2 };
 constexpr int kNotchPositionMax = 127;

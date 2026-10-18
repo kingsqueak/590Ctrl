@@ -12,7 +12,6 @@ class QButtonGroup;
 class QCheckBox;
 class QComboBox;
 class QLabel;
-class QProgressBar;
 class QPushButton;
 class QRadioButton;
 class QSlider;
@@ -20,6 +19,7 @@ class QSpinBox;
 class QFormLayout;
 class EqualizerPanel;
 class FrequencyDisplay;
+class SMeter;
 
 class MainWindow : public QMainWindow
 {
@@ -70,7 +70,7 @@ private:
     QButtonGroup *m_vfoButtons = nullptr;
     QPushButton *m_splitButton = nullptr;
     QLabel *m_txIndicator = nullptr;
-    QProgressBar *m_sMeter = nullptr;
+    SMeter *m_sMeter = nullptr;
 
     QButtonGroup *m_modeButtons = nullptr;
     QCheckBox *m_dataCheck = nullptr;

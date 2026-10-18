@@ -36,6 +36,7 @@ qt_add_executable(590Ctrl
     src/app/EqualizerPanel.h src/app/EqualizerPanel.cpp
     src/app/CatMonitor.h src/app/CatMonitor.cpp
     src/app/WheelSteps.h
+    src/app/SMeter.h src/app/SMeter.cpp
 )
 target_link_libraries(590Ctrl PRIVATE ts590core Qt6::Widgets)
 target_compile_definitions(590Ctrl PRIVATE PROJECT_VERSION="${PROJECT_VERSION}")

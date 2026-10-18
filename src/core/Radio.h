@@ -48,6 +48,7 @@ public:
     int rfGain() const { return m_rfGain; }
     int sMeter() const { return m_sMeter; }
     bool transmitting() const { return m_transmitting; }
+    int txMeter(TxMeter meter) const { return m_txMeters[int(meter) - 1]; }   // dots, 0..30
     // Menu-backed USB audio levels, 0..9; nullopt until read.
     std::optional<int> usbAudioIn() const { return m_usbAudioIn; }
     std::optional<int> usbAudioOut() const { return m_usbAudioOut; }
@@ -137,6 +138,7 @@ signals:
     void noiseReductionChanged();    // selection or level
     void sMeterChanged(int dots);
     void transmitChanged(bool transmitting);
+    void txMetersChanged();
     // Slot, layout or values changed.
     void filterChanged();
     void eqCurveChanged(ts590::EqType type);
@@ -189,6 +191,7 @@ private:
     int m_rfGain = 0;
     int m_sMeter = 0;
     bool m_transmitting = false;
+    int m_txMeters[3] = {};   // SWR, COMP, ALC
     std::optional<int> m_usbAudioIn;
     std::optional<int> m_usbAudioOut;
     bool m_rit = false;

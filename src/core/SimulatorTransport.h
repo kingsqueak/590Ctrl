@@ -46,6 +46,8 @@ public:
     int noiseReduction() const { return m_noiseReduction; }
     int nrLevel(int reduction) const { return m_nrLevels[reduction]; }
     void setUnresponsive(bool on) { m_unresponsive = on; }
+    // Pretends to key up (reported via AI as TX/RX) with these meter readings.
+    void simulateTransmit(bool on, int swr = 0, int comp = 0, int alc = 0);
 
 private:
     void handle(const QByteArray &command);
@@ -85,6 +87,8 @@ private:
     int m_notchMode = 0;
     bool m_notchWide = false;
     int m_notchPosition = 64;
+    bool m_transmitting = false;
+    int m_txMeters[3] = {};   // SWR, COMP, ALC
     int m_noiseBlanker = 0;
     int m_nbLevels[3] = {0, 3, 6};   // per blanker: [1] NB1, [2] NB2
     int m_noiseReduction = 0;

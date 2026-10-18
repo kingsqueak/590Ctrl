@@ -7,7 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include(CTest)
 
-set(QT_COMPONENTS Core Widgets SerialPort)
+set(QT_COMPONENTS Core Widgets SerialPort Network)
 if(BUILD_TESTING)
     list(APPEND QT_COMPONENTS Test)
 endif()
@@ -25,9 +25,10 @@ qt_add_library(ts590core STATIC
     src/core/Radio.h src/core/Radio.cpp
     src/core/EqPresetLibrary.h src/core/EqPresetLibrary.cpp
     src/core/EqAutoLoader.h src/core/EqAutoLoader.cpp
+    src/core/Qrz.h src/core/Qrz.cpp
 )
 target_include_directories(ts590core PUBLIC src/core)
-target_link_libraries(ts590core PUBLIC Qt6::Core Qt6::SerialPort)
+target_link_libraries(ts590core PUBLIC Qt6::Core Qt6::SerialPort Qt6::Network)
 
 qt_add_executable(590Ctrl
     src/app/main.cpp
@@ -52,7 +53,7 @@ set_target_properties(590Ctrl PROPERTIES
 )
 
 if(BUILD_TESTING)
-    foreach(test tst_catcodec tst_catlink tst_radio tst_eqpresets)
+    foreach(test tst_catcodec tst_catlink tst_radio tst_eqpresets tst_qrz)
         qt_add_executable(${test} tests/${test}.cpp)
         target_link_libraries(${test} PRIVATE ts590core Qt6::Test)
         add_test(NAME ${test} COMMAND ${test})

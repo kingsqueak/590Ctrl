@@ -42,6 +42,24 @@ Version 0.10 · Licensed under the [GPL-3.0](LICENSE).
   its buffer frees up, and STOP drops what hasn't been keyed yet
 - The TS-590SG's Morse decoder with its threshold and a scrolling text window
 
+**QRZ** tab
+- Look up a callsign on QRZ.com (XML data service) and see every field QRZ
+  returns, with the operator's photo; double-click the call, web page, email
+  or image to open it
+- With a Logbook API key, each lookup also checks your QRZ Logbook: a call
+  you've worked turns green, with the date, time, band and mode of the last
+  QSO and how many you've logged
+- **Log Contact** adds the QSO to your QRZ Logbook through its API: frequency
+  (and RX frequency when split), band, mode, TX power and the current UTC time
+  come from the radio and the system; RST, comment, and the name, QTH, grid,
+  DXCC, state/county and zones from the lookup are included
+- SSB-DATA logs as PSK31 by default; pick FT8, FT4, RTTY, PSK, MFSK, OLIVIA,
+  THOR or HELL when you're using something else
+- **Account…** holds your QRZ username and password, station callsign, and
+  the Logbook API key (only needed for logging; logging through the API needs
+  a QRZ subscription). A remembered password is stored unencrypted in the
+  app's settings file.
+
 **Meter**
 - S-meter with S1–S9 / +20–+60 dB scale, smooth color zones, peak hold and an
   RF gain marker

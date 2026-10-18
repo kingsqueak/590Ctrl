@@ -3,6 +3,7 @@
 #include "CatCodec.h"
 #include "EqAutoLoader.h"
 #include "EqPresetLibrary.h"
+#include "Qrz.h"
 #include "Radio.h"
 
 #include <QMainWindow>
@@ -20,6 +21,7 @@ class QFormLayout;
 class QGroupBox;
 class QLineEdit;
 class QPlainTextEdit;
+class QTableWidget;
 class EqualizerPanel;
 class FrequencyDisplay;
 class PowerButton;
@@ -47,6 +49,7 @@ private:
     QWidget *createEqualizerPage();
     QWidget *createBandsPage();
     QWidget *createCwPage();
+    QWidget *createQrzPage();
     QSlider *createLevelSlider(void (ts590::Radio::*setter)(int), int maximum = 255);
 
     void refreshPorts();
@@ -67,6 +70,16 @@ private:
     void refreshSquelchOpen();
     void refreshKeyer();
     void refreshDecoder();
+    // QRZ
+    void loadQrzAccount();
+    void editQrzAccount();
+    void lookUpCall();
+    void logContact();
+    void showLookup(const qrz::LookupResponse &response);
+    void setQrzStatus(const QString &text, bool error = false);   // replaces both lines
+    void refreshQrzStatus();
+    void setCallWorked(bool worked);
+    QString stationCallsign() const;
     void refreshMonitor();
     void refreshAntenna();
     void refreshFrontEnd();   // ATT / PRE button
@@ -167,6 +180,26 @@ private:
     QPushButton *m_decoderButton = nullptr;
     QSlider *m_decoderSlider = nullptr;
     QPlainTextEdit *m_decoderText = nullptr;
+
+    qrz::Client m_qrz;
+    std::optional<qrz::LookupResponse> m_lastLookup;
+    QString m_qrzUsername;   // the account; the password lives only in m_qrz
+    QUrl m_qrzImageUrl;
+    // Status area: the log check's line above the lookup's (or logging's).
+    QString m_qrzWorkedText;
+    bool m_qrzWorked = false;
+    QString m_qrzStatusText;
+    bool m_qrzStatusError = false;
+    QLineEdit *m_qrzCall = nullptr;
+    QPushButton *m_qrzLookupButton = nullptr;
+    QPushButton *m_qrzLogButton = nullptr;
+    QComboBox *m_qrzMode = nullptr;
+    QLineEdit *m_qrzRstSent = nullptr;
+    QLineEdit *m_qrzRstRcvd = nullptr;
+    QLineEdit *m_qrzComment = nullptr;
+    QLabel *m_qrzStatus = nullptr;
+    QTableWidget *m_qrzTable = nullptr;
+    QLabel *m_qrzImage = nullptr;
 
     EqualizerPanel *m_rxEq = nullptr;
     EqualizerPanel *m_txEq = nullptr;

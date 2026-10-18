@@ -16,12 +16,16 @@
 #include <QCheckBox>
 #include <QCloseEvent>
 #include <QComboBox>
+#include <QDesktopServices>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QDockWidget>
 #include <QFontDatabase>
 #include <QFormLayout>
 #include <QFrame>
 #include <QGridLayout>
 #include <QGroupBox>
+#include <QHeaderView>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
@@ -37,7 +41,9 @@
 #include <QStatusBar>
 #include <QStyle>
 #include <QStyleFactory>
+#include <QTableWidget>
 #include <QTabWidget>
+#include <QTimeZone>
 #include <QToolBar>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -122,6 +128,7 @@ MainWindow::MainWindow(QWidget *parent)
     tabs->addTab(createEqualizerPage(), tr("Equalizer"));
     tabs->addTab(createBandsPage(), tr("Bands"));
     tabs->addTab(createCwPage(), tr("CW"));
+    tabs->addTab(createQrzPage(), tr("QRZ"));
 
     auto *central = new QWidget;
     auto *layout = new QVBoxLayout(central);
@@ -285,6 +292,78 @@ MainWindow::MainWindow(QWidget *parent)
                 [this, type](const EqLevels &levels) { m_radio.setEqLevels(type, levels); });
         connect(panel, &EqualizerPanel::reloadRequested, &m_radio, &Radio::refreshEq);
     }
+
+    // ---- QRZ
+    m_qrz.setAgent(QStringLiteral("590Ctrl/%1").arg(QCoreApplication::applicationVersion()));
+    loadQrzAccount();
+    connect(&m_qrz, &qrz::Client::lookupFinished, this, &MainWindow::showLookup);
+    connect(&m_qrz, &qrz::Client::lookupFailed, this, [this](const QString &call, const QString &error) {
+        m_qrzLookupButton->setEnabled(true);
+        m_lastLookup.reset();
+        m_qrzStatusText = call.isEmpty() ? error : tr("%1: %2").arg(call, error);
+        m_qrzStatusError = true;
+        refreshQrzStatus();
+    });
+    connect(&m_qrz, &qrz::Client::logChecked, this, [this](const QString &call, const qrz::FetchResult &result) {
+        if (call != m_qrzCall->text().trimmed().toUpper())
+            return;   // the box has moved on
+        const auto last = qrz::latestQso(result.records);
+        setCallWorked(last.has_value());
+        if (!last) {
+            m_qrzWorkedText = tr("Not in your QRZ log");
+        } else {
+            const QDateTime when(QDate::fromString(last->value(QStringLiteral("qso_date")), QStringLiteral("yyyyMMdd")),
+                                 QTime::fromString(last->value(QStringLiteral("time_on")).left(4), QStringLiteral("HHmm")),
+                                 QTimeZone::UTC);
+            // FT4 reads better than its ADIF mode, MFSK; SSB better than USB.
+            const QString mode = last->value(QStringLiteral("mode"));
+            const QString submode = last->value(QStringLiteral("submode"));
+            const bool useSubmode = !submode.isEmpty() && mode.compare(QLatin1String("SSB"), Qt::CaseInsensitive) != 0;
+            QStringList parts = {tr("Last worked %1 UTC").arg(when.toString(QStringLiteral("yyyy-MM-dd HH:mm"))),
+                                 QStringList{last->value(QStringLiteral("band")), useSubmode ? submode : mode}
+                                     .join(QLatin1Char(' '))
+                                     .trimmed()};
+            const int count = std::max(result.count, int(result.records.size()));
+            if (count > 1)
+                parts << tr("%n QSOs in your log", nullptr, count);
+            parts.removeAll(QString());
+            m_qrzWorkedText = parts.join(QStringLiteral(" · "));
+        }
+        refreshQrzStatus();
+    });
+    connect(&m_qrz, &qrz::Client::logCheckFailed, this, [this](const QString &call, const QString &error) {
+        if (call != m_qrzCall->text().trimmed().toUpper())
+            return;
+        m_qrzWorkedText = tr("Log check failed: %1").arg(error);
+        refreshQrzStatus();
+    });
+    connect(&m_qrz, &qrz::Client::imageFetched, this, [this](const QUrl &url, const QByteArray &data) {
+        QPixmap pixmap;
+        if (url != m_qrzImageUrl || !pixmap.loadFromData(data))
+            return;
+        m_qrzImage->setPixmap(pixmap.scaled(m_qrzImage->maximumSize(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
+        m_qrzImage->show();
+    });
+    connect(&m_qrz, &qrz::Client::qsoInserted, this, [this](const qrz::LogResult &result) {
+        m_qrzLogButton->setEnabled(true);
+        setQrzStatus(result.logId.isEmpty() ? tr("Logged to QRZ.") : tr("Logged to QRZ (log ID %1).").arg(result.logId));
+        setCallWorked(true);
+    });
+    connect(&m_qrz, &qrz::Client::qsoFailed, this, [this](const QString &reason) {
+        m_qrzLogButton->setEnabled(true);
+        setQrzStatus(tr("Not logged: %1").arg(reason), true);
+    });
+    // The QSO's mode and reports follow the radio; both stay editable.
+    connect(&m_radio, &Radio::modeChanged, this, [this](Mode mode, bool data) {
+        const qrz::AdifMode adif = qrz::adifModeFor(mode, data);
+        const QString adifMode = adif.mode;
+        if (adifMode.isEmpty())
+            return;
+        // PSK31 is in the list by its submode; SSB's submode is just the sideband.
+        m_qrzMode->setCurrentText(adifMode == QLatin1String("PSK") ? adif.submode : adifMode);
+        m_qrzRstSent->setText(qrz::defaultReport(adifMode));
+        m_qrzRstRcvd->setText(qrz::defaultReport(adifMode));
+    });
 
     QSettings settings;
     restoreGeometry(settings.value(QStringLiteral("window/geometry")).toByteArray());
@@ -1183,6 +1262,116 @@ QWidget *MainWindow::createCwPage()
     return page;
 }
 
+QWidget *MainWindow::createQrzPage()
+{
+    m_qrzCall = new QLineEdit;
+    m_qrzCall->setPlaceholderText(tr("Callsign"));
+    m_qrzCall->setMaxLength(20);
+    m_qrzCall->setClearButtonEnabled(true);
+    QFont callFont = m_qrzCall->font();
+    callFont.setPointSizeF(callFont.pointSizeF() * 1.4);
+    callFont.setBold(true);
+    m_qrzCall->setFont(callFont);
+    const int callWidth = m_qrzCall->fontMetrics().horizontalAdvance(QStringLiteral("WW/WW0WWW/WW")) + 40;
+    m_qrzCall->setMinimumWidth(callWidth);
+    m_qrzCall->setMaximumWidth(callWidth * 3 / 2);
+    connect(m_qrzCall, &QLineEdit::textEdited, this, [this](const QString &text) {
+        // Calls are upper case; keep the cursor where it was.
+        const int cursor = m_qrzCall->cursorPosition();
+        m_qrzCall->setText(text.toUpper());
+        m_qrzCall->setCursorPosition(cursor);
+        setCallWorked(false);   // until this call is checked
+    });
+    connect(m_qrzCall, &QLineEdit::returnPressed, this, &MainWindow::lookUpCall);
+
+    m_qrzLookupButton = new QPushButton(tr("Look Up"));
+    m_qrzLookupButton->setToolTip(tr("Look up the callsign on QRZ.com"));
+    connect(m_qrzLookupButton, &QPushButton::clicked, this, &MainWindow::lookUpCall);
+    m_qrzLogButton = new QPushButton(tr("Log Contact"));
+    m_qrzLogButton->setToolTip(tr("Add a QSO with this callsign to your QRZ Logbook, using the radio's frequency "
+                                  "and mode and the current UTC time"));
+    connect(m_qrzLogButton, &QPushButton::clicked, this, &MainWindow::logContact);
+    auto *accountButton = new QPushButton(tr("Account…"));
+    accountButton->setToolTip(tr("QRZ username, password, station callsign and Logbook API key"));
+    connect(accountButton, &QPushButton::clicked, this, &MainWindow::editQrzAccount);
+
+    auto *lookupRow = new QHBoxLayout;
+    lookupRow->addWidget(m_qrzCall);
+    lookupRow->addWidget(m_qrzLookupButton);
+    lookupRow->addWidget(m_qrzLogButton);
+    lookupRow->addStretch();
+    lookupRow->addWidget(accountButton);
+
+    // QSO details sent with Log Contact, besides frequency, mode and time.
+    m_qrzMode = new QComboBox;
+    m_qrzMode->setEditable(true);
+    m_qrzMode->addItems(qrz::modeNames());
+    m_qrzMode->setToolTip(tr("ADIF mode to log. Follows the radio; DATA modes are a guess (PSK31 on SSB-DATA), "
+                             "so pick the one you're using."));
+    m_qrzRstSent = new QLineEdit(QStringLiteral("59"));
+    m_qrzRstRcvd = new QLineEdit(QStringLiteral("59"));
+    for (QLineEdit *rst : {m_qrzRstSent, m_qrzRstRcvd}) {
+        rst->setMaxLength(6);
+        rst->setFixedWidth(rst->fontMetrics().horizontalAdvance(QStringLiteral("-22 dB")) + 16);
+    }
+    m_qrzComment = new QLineEdit;
+    m_qrzComment->setPlaceholderText(tr("Comment (optional)"));
+    auto *qsoRow = new QHBoxLayout;
+    qsoRow->addWidget(new QLabel(tr("Mode")));
+    qsoRow->addWidget(m_qrzMode);
+    qsoRow->addSpacing(8);
+    qsoRow->addWidget(new QLabel(tr("RST sent")));
+    qsoRow->addWidget(m_qrzRstSent);
+    qsoRow->addWidget(new QLabel(tr("rcvd")));
+    qsoRow->addWidget(m_qrzRstRcvd);
+    qsoRow->addSpacing(8);
+    qsoRow->addWidget(m_qrzComment, 1);
+
+    m_qrzStatus = new QLabel;
+    m_qrzStatus->setWordWrap(true);
+    m_qrzStatus->setTextFormat(Qt::RichText);
+    m_qrzStatus->setTextInteractionFlags(Qt::TextSelectableByMouse);
+
+    m_qrzTable = new QTableWidget(0, 2);
+    m_qrzTable->horizontalHeader()->hide();
+    m_qrzTable->verticalHeader()->hide();
+    m_qrzTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+    m_qrzTable->horizontalHeader()->setStretchLastSection(true);
+    m_qrzTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    m_qrzTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+    m_qrzTable->setAlternatingRowColors(true);
+    m_qrzTable->setShowGrid(false);
+    m_qrzTable->setWordWrap(true);
+    m_qrzTable->setToolTip(tr("Double-click the callsign, web page, email or image to open it"));
+    connect(m_qrzTable, &QTableWidget::cellDoubleClicked, this, [this](int row, int) {
+        const QString field = m_qrzTable->item(row, 0)->data(Qt::UserRole).toString();
+        const QString value = m_qrzTable->item(row, 1)->text();
+        if (field == QLatin1String("call"))
+            QDesktopServices::openUrl(QUrl(QStringLiteral("https://www.qrz.com/db/") + value));
+        else if (field == QLatin1String("email"))
+            QDesktopServices::openUrl(QUrl(QStringLiteral("mailto:") + value));
+        else if (field == QLatin1String("url") || field == QLatin1String("image"))
+            QDesktopServices::openUrl(QUrl::fromUserInput(value));
+    });
+
+    m_qrzImage = new QLabel;
+    m_qrzImage->setMaximumSize(320, 320);
+    m_qrzImage->setAlignment(Qt::AlignTop | Qt::AlignHCenter);
+    m_qrzImage->hide();
+
+    auto *results = new QHBoxLayout;
+    results->addWidget(m_qrzTable, 1);
+    results->addWidget(m_qrzImage, 0, Qt::AlignTop);
+
+    auto *page = new QWidget;
+    auto *layout = new QVBoxLayout(page);
+    layout->addLayout(lookupRow);
+    layout->addLayout(qsoRow);
+    layout->addWidget(m_qrzStatus);
+    layout->addLayout(results, 1);
+    return page;
+}
+
 QWidget *MainWindow::createEqualizerPage()
 {
     m_rxEq = new EqualizerPanel(EqType::Rx, &m_eqPresets);
@@ -1633,6 +1822,228 @@ void MainWindow::refreshAgc()
         m_agcSlider->setValue(*value);
     m_applyingRadioState = false;
     m_agcValue->setText(agc == Agc::Off ? QString() : QString::number(m_agcSlider->value()));
+}
+
+// ---------------------------------------------------------------------- QRZ
+
+void MainWindow::loadQrzAccount()
+{
+    QSettings settings;
+    m_qrzUsername = settings.value(QStringLiteral("qrz/username")).toString();
+    m_qrz.setCredentials(m_qrzUsername, settings.value(QStringLiteral("qrz/password")).toString());
+    m_qrz.setLogbookKey(settings.value(QStringLiteral("qrz/logbookKey")).toString());
+}
+
+QString MainWindow::stationCallsign() const
+{
+    // QRZ usernames are callsigns, so that's the default.
+    const QString call = QSettings().value(QStringLiteral("qrz/stationCall")).toString().trimmed();
+    return (call.isEmpty() ? m_qrzUsername : call).toUpper();
+}
+
+void MainWindow::editQrzAccount()
+{
+    QSettings settings;
+    QDialog dialog(this);
+    dialog.setWindowTitle(tr("QRZ Account"));
+    auto *username = new QLineEdit(m_qrzUsername);
+    // The one in use, which is the saved one unless it isn't remembered.
+    auto *password = new QLineEdit(m_qrz.password());
+    password->setEchoMode(QLineEdit::Password);
+    auto *remember = new QCheckBox(tr("Remember password"));
+    remember->setChecked(settings.value(QStringLiteral("qrz/rememberPassword"), true).toBool());
+    remember->setToolTip(tr("Saved unencrypted in this app's settings file"));
+    auto *stationCall = new QLineEdit(settings.value(QStringLiteral("qrz/stationCall")).toString());
+    stationCall->setPlaceholderText(tr("Same as the username"));
+    auto *key = new QLineEdit(settings.value(QStringLiteral("qrz/logbookKey")).toString());
+    key->setPlaceholderText(tr("Optional: only needed for Log Contact"));
+    key->setToolTip(tr("From your QRZ Logbook: Settings → API → Current Key. Each station callsign has its own "
+                       "logbook and key. Logging through the API needs a QRZ subscription."));
+    auto *note = new QLabel(tr("Lookups use the QRZ XML service; without a subscription QRZ returns only part of "
+                               "each record."));
+    note->setWordWrap(true);
+    note->setForegroundRole(QPalette::PlaceholderText);
+
+    auto *form = new QFormLayout;
+    alignForm(form);
+    form->addRow(tr("Username"), username);
+    form->addRow(tr("Password"), password);
+    form->addRow(QString(), remember);
+    form->addRow(tr("Station callsign"), stationCall);
+    form->addRow(tr("Logbook API key"), key);
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    auto *layout = new QVBoxLayout(&dialog);
+    layout->addLayout(form);
+    layout->addWidget(note);
+    layout->addWidget(buttons);
+    dialog.resize(440, dialog.sizeHint().height());
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
+    m_qrzUsername = username->text().trimmed();
+    settings.setValue(QStringLiteral("qrz/username"), m_qrzUsername);
+    settings.setValue(QStringLiteral("qrz/rememberPassword"), remember->isChecked());
+    if (remember->isChecked())
+        settings.setValue(QStringLiteral("qrz/password"), password->text());
+    else
+        settings.remove(QStringLiteral("qrz/password"));
+    settings.setValue(QStringLiteral("qrz/stationCall"), stationCall->text().trimmed().toUpper());
+    settings.setValue(QStringLiteral("qrz/logbookKey"), key->text().trimmed());
+    m_qrz.setCredentials(m_qrzUsername, password->text());
+    m_qrz.setLogbookKey(key->text());
+}
+
+void MainWindow::setQrzStatus(const QString &text, bool error)
+{
+    m_qrzWorkedText.clear();
+    m_qrzStatusText = text;
+    m_qrzStatusError = error;
+    refreshQrzStatus();
+}
+
+void MainWindow::refreshQrzStatus()
+{
+    QStringList lines;
+    if (!m_qrzWorkedText.isEmpty()) {
+        const QString text = m_qrzWorkedText.toHtmlEscaped();
+        if (m_qrzWorked)
+            lines << QStringLiteral("<b style=\"color:#27ae60\">%1</b>").arg(text);
+        else
+            lines << QStringLiteral("<span style=\"color:%1\">%2</span>")
+                         .arg(palette().color(QPalette::PlaceholderText).name(), text);
+    }
+    if (!m_qrzStatusText.isEmpty()) {
+        lines << (m_qrzStatusError ? QStringLiteral("<span style=\"color:#e74c3c\">%1</span>")
+                                   : QStringLiteral("%1"))
+                     .arg(m_qrzStatusText.toHtmlEscaped());
+    }
+    m_qrzStatus->setText(lines.join(QStringLiteral("<br>")));
+}
+
+void MainWindow::setCallWorked(bool worked)
+{
+    m_qrzWorked = worked;
+    m_qrzCall->setStyleSheet(worked ? QStringLiteral("QLineEdit { color: #27ae60; }") : QString());
+    m_qrzCall->setToolTip(worked ? tr("Already in your QRZ log") : QString());
+}
+
+void MainWindow::lookUpCall()
+{
+    const QString call = m_qrzCall->text().trimmed().toUpper();
+    if (call.isEmpty())
+        return;
+    if (!m_qrz.hasCredentials()) {
+        editQrzAccount();
+        if (!m_qrz.hasCredentials())
+            return;
+    }
+    m_qrzTable->setRowCount(0);
+    m_qrzImage->clear();
+    m_qrzImage->hide();
+    m_qrzImageUrl.clear();
+    m_lastLookup.reset();
+    m_qrzLookupButton->setEnabled(false);
+    setCallWorked(false);
+    setQrzStatus(tr("Looking up %1…").arg(call));
+    if (m_qrz.hasLogbookKey()) {
+        m_qrzWorkedText = tr("Checking your QRZ log…");
+        refreshQrzStatus();
+        m_qrz.checkLog(call);
+    }
+    m_qrz.lookup(call);
+}
+
+void MainWindow::showLookup(const qrz::LookupResponse &response)
+{
+    m_qrzLookupButton->setEnabled(true);
+    m_lastLookup = response;
+
+    // The spec's order, then anything new in the order QRZ sent it.
+    QList<qrz::Field> fields;
+    for (const qrz::Field &field : response.callsign) {
+        if (!field.value.isEmpty())
+            fields << field;
+    }
+    std::stable_sort(fields.begin(), fields.end(), [](const qrz::Field &a, const qrz::Field &b) {
+        return qrz::fieldRank(a.name) < qrz::fieldRank(b.name);
+    });
+    m_qrzTable->setRowCount(int(fields.size()));
+    for (int row = 0; row < fields.size(); ++row) {
+        auto *label = new QTableWidgetItem(qrz::fieldLabel(fields[row].name));
+        label->setData(Qt::UserRole, fields[row].name);
+        label->setForeground(palette().color(QPalette::PlaceholderText));
+        m_qrzTable->setItem(row, 0, label);
+        m_qrzTable->setItem(row, 1, new QTableWidgetItem(qrz::fieldDisplayValue(fields[row].name, fields[row].value)));
+    }
+    m_qrzTable->resizeRowsToContents();
+
+    QStringList status;
+    status << tr("%1 found.").arg(response.value(u"call"));
+    if (!response.message.isEmpty())
+        status << response.message;
+    if (!response.lookupCount.isEmpty())
+        status << tr("Lookups in the last 24 h: %1").arg(response.lookupCount);
+    if (!response.subscriptionExpiry.isEmpty())
+        status << tr("Subscription: %1").arg(response.subscriptionExpiry);
+    m_qrzStatusText = status.join(QStringLiteral(" · "));
+    m_qrzStatusError = false;
+    refreshQrzStatus();
+
+    if (const QString image = response.value(u"image"); !image.isEmpty()) {
+        m_qrzImageUrl = QUrl(image);
+        m_qrz.fetchImage(m_qrzImageUrl);
+    }
+}
+
+void MainWindow::logContact()
+{
+    const QString call = m_qrzCall->text().trimmed().toUpper();
+    if (call.isEmpty()) {
+        setQrzStatus(tr("Enter the callsign to log."), true);
+        return;
+    }
+    if (m_radio.state() != Radio::State::Connected) {
+        setQrzStatus(tr("Connect to the radio first: the QSO's frequency and mode come from it."), true);
+        return;
+    }
+    if (!m_qrz.hasLogbookKey() || stationCallsign().isEmpty()) {
+        editQrzAccount();
+        if (!m_qrz.hasLogbookKey() || stationCallsign().isEmpty()) {
+            setQrzStatus(tr("Logging needs your station callsign and QRZ Logbook API key (Account…)."), true);
+            return;
+        }
+    }
+
+    qrz::Qso qso;
+    qso.call = call;
+    qso.stationCall = stationCallsign();
+    qso.timeOn = QDateTime::currentDateTimeUtc();
+    qso.txHz = m_radio.frequency(m_radio.txVfo());
+    if (m_radio.split())
+        qso.rxHz = m_radio.frequency(m_radio.rxVfo());
+    if (qrz::adifBand(qso.txHz).isEmpty()) {
+        setQrzStatus(tr("%1 MHz is outside the amateur bands, so there's no band to log.")
+                         .arg(qso.txHz / 1e6, 0, 'f', 3),
+                     true);
+        return;
+    }
+    const qrz::AdifMode mode = qrz::adifModeNamed(m_qrzMode->currentText(), m_radio.mode());
+    qso.mode = mode.mode;
+    qso.submode = mode.submode;
+    qso.rstSent = m_qrzRstSent->text().trimmed();
+    qso.rstRcvd = m_qrzRstRcvd->text().trimmed();
+    qso.txPower = m_radio.txPower();
+    qso.comment = m_qrzComment->text().trimmed();
+    if (m_lastLookup)
+        qrz::applyLookup(qso, *m_lastLookup);
+
+    m_qrzLogButton->setEnabled(false);
+    setQrzStatus(tr("Logging %1 on %2 %3 at %4 UTC…")
+                     .arg(call, qrz::adifBand(qso.txHz), m_qrzMode->currentText().toUpper(),
+                          qso.timeOn.toString(QStringLiteral("HH:mm"))));
+    m_qrz.insertQso(qrz::adifRecord(qso));
 }
 
 void MainWindow::showMessage(const QString &text)

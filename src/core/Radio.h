@@ -57,6 +57,8 @@ public:
     std::optional<int> txPower() const { return m_txPower; }
     std::optional<int> tunePower() const { return m_tunePower; }   // TS-590SG only
     bool powerFine() const { return m_powerFine; }   // 1 W steps; otherwise 5 W
+    // Index into txFilterValuesHz(filter); nullopt until read.
+    std::optional<int> txFilter(TxFilter filter) const { return m_txFilters[int(filter)]; }
 
     FilterSlot filterSlot() const { return m_filterSlot; }
     FilterLayout filterLayout() const;
@@ -86,6 +88,7 @@ public:
     void setRitXitOffset(int hz);
     void setTxPower(int watts);
     void setTunePower(int watts);
+    void setTxFilter(TxFilter filter, int index);
     void setFilterSlot(FilterSlot slot);
     void setFilterValue(FilterCommand command, int raw);
     // Selects the curve for the current mode family.
@@ -114,6 +117,7 @@ signals:
     void txPowerChanged(int watts);
     void tunePowerChanged(int watts);
     void powerFineChanged(bool fine);
+    void txFilterChanged(ts590::TxFilter filter);
     void sMeterChanged(int dots);
     void transmitChanged(bool transmitting);
     // Slot, layout or values changed.
@@ -132,7 +136,7 @@ private:
     void requestModeDependentState();
     void requestFilterValues();
     void applyMode(Mode mode, std::optional<bool> data);
-    void setMenuLevel(int menu, std::optional<int> &field, int level);
+    void setMenuValue(int menu, std::optional<int> &field, int value, int maximum);
     void requestVfoState();
     void setPower(QByteArray (*encode)(int), std::optional<int> &field, int watts, int maximum);
     void pollMeter();
@@ -176,6 +180,7 @@ private:
     std::optional<int> m_txPower;
     std::optional<int> m_tunePower;
     bool m_powerFine = false;
+    std::optional<int> m_txFilters[kTxFilterCount];
 
     FilterSlot m_filterSlot = FilterSlot::A;
     bool m_ssbWidthShift = false;       // EX028

@@ -34,6 +34,11 @@ SimulatorTransport::SimulatorTransport(QObject *parent)
     m_menus[menus.usbAudioIn] = 4;
     m_menus[menus.usbAudioOut] = 5;
     m_menus[menus.powerFine] = 0;
+    // TX filters: 100 Hz low cut, 2900 Hz high cut (SSB and SSB-DATA).
+    m_menus[menus.txFilter[0]] = 1;
+    m_menus[menus.txFilter[1]] = 4;
+    m_menus[menus.txFilter[2]] = 1;
+    m_menus[menus.txFilter[3]] = 4;
 }
 
 bool SimulatorTransport::open()

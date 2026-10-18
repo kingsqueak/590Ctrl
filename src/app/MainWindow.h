@@ -37,6 +37,7 @@ private:
     QWidget *createModeBar();
     QWidget *createOperatePage();
     QWidget *createRitXitGroup();
+    QWidget *createTxFilterGroup();
     QWidget *createTransmitGroup();
     QWidget *createEqualizerPage();
     QSlider *createLevelSlider(void (ts590::Radio::*setter)(int), int maximum = 255);
@@ -92,6 +93,7 @@ private:
     QLabel *m_filterLabels[2] = {};
     QComboBox *m_filterCombos[2] = {};
     ts590::FilterLayout m_filterLayout;
+    QComboBox *m_txFilterCombos[ts590::kTxFilterCount] = {};
 
     EqualizerPanel *m_rxEq = nullptr;
     EqualizerPanel *m_txEq = nullptr;

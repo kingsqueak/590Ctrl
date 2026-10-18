@@ -149,6 +149,10 @@ MainWindow::MainWindow(QWidget *parent)
     connect(&m_radio, &Radio::txPowerChanged, this, follow(m_txPowerSlider));
     connect(&m_radio, &Radio::tunePowerChanged, this, follow(m_tunePowerSlider));
     connect(&m_radio, &Radio::ritXitChanged, this, &MainWindow::refreshRitXit);
+    connect(&m_radio, &Radio::txFilterChanged, this, [this](TxFilter filter) {
+        QComboBox *combo = m_txFilterCombos[int(filter)];
+        combo->setCurrentIndex(m_radio.txFilter(filter).value_or(-1));
+    });
     connect(&m_radio, &Radio::powerFineChanged, this, [this](bool fine) {
         // Match the radio: with Power fine OFF it only takes 5 W steps.
         for (QSlider *slider : {m_txPowerSlider, m_tunePowerSlider}) {
@@ -400,12 +404,43 @@ QWidget *MainWindow::createOperatePage()
     right->addWidget(createRitXitGroup());
     right->addWidget(createTransmitGroup(), 1);
 
+    auto *middle = new QVBoxLayout;
+    middle->addWidget(filters);
+    middle->addWidget(createTxFilterGroup());
+    middle->addStretch();
+
     auto *page = new QWidget;
     auto *layout = new QHBoxLayout(page);
     layout->addWidget(levels, 3);
-    layout->addWidget(filters, 2);
+    layout->addLayout(middle, 2);
     layout->addLayout(right, 2);
     return page;
+}
+
+QWidget *MainWindow::createTxFilterGroup()
+{
+    auto *group = new QGroupBox(tr("TX Filter"));
+    group->setToolTip(tr("Transmit audio filters (menus 031–034). SSB settings also apply to AM."));
+    auto *layout = new QGridLayout(group);
+    layout->addWidget(new QLabel(tr("Low cut")), 0, 1);
+    layout->addWidget(new QLabel(tr("High cut")), 0, 2);
+    layout->addWidget(new QLabel(tr("SSB/AM")), 1, 0);
+    layout->addWidget(new QLabel(tr("SSB-DATA")), 2, 0);
+    for (int i = 0; i < kTxFilterCount; ++i) {
+        const auto filter = TxFilter(i);
+        auto *combo = new QComboBox;
+        for (int hz : txFilterValuesHz(filter))
+            combo->addItem(tr("%1 Hz").arg(hz));
+        combo->setCurrentIndex(-1);
+        connect(combo, &QComboBox::activated, this, [this, filter](int index) { m_radio.setTxFilter(filter, index); });
+        // TxFilter order: low/high for SSB, then low/high for SSB-DATA.
+        layout->addWidget(combo, 1 + i / 2, 1 + i % 2);
+        m_txFilterCombos[i] = combo;
+        m_radioControls << combo;
+    }
+    layout->setColumnStretch(1, 1);
+    layout->setColumnStretch(2, 1);
+    return group;
 }
 
 QWidget *MainWindow::createRitXitGroup()

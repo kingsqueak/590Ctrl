@@ -70,6 +70,8 @@ private slots:
         QCOMPARE(s.ssbFilterMode, -1);
         QCOMPARE(sg.powerFine, 54);
         QCOMPARE(s.powerFine, 48);
+        QCOMPARE(sg.txFilter[int(TxFilter::SsbHighCut)], 32);
+        QCOMPARE(s.txFilter[int(TxFilter::SsbDataHighCut)], 28);
     }
 
     void encodesMenusAndEq()

@@ -80,9 +80,18 @@ MenuNumbers menuNumbersFor(int modelId)
 {
     if (modelId == kModelTs590S) {
         // The S has no HI/LO vs WIDTH/SHIFT menus (SSB is always HI/LO).
-        return {-1, -1, 64, 65, 48};
+        return {-1, -1, 64, 65, 48, {25, 26, 27, 28}};
     }
-    return {28, 29, 71, 72, 54};
+    return {28, 29, 71, 72, 54, {31, 32, 33, 34}};
+}
+
+const QList<int> &txFilterValuesHz(TxFilter filter)
+{
+    static const QList<int> lowCut = {10, 100, 200, 300, 400, 500};
+    // 3000 Hz is the hard limit: a TS-590SG (fw 1.07) answers "?;" to index 6+
+    // or a literal "4000"/"5000" on menus 032/034 and keeps its old value.
+    static const QList<int> highCut = {2500, 2600, 2700, 2800, 2900, 3000};
+    return filter == TxFilter::SsbLowCut || filter == TxFilter::SsbDataLowCut ? lowCut : highCut;
 }
 
 int txPowerMax(Mode mode)

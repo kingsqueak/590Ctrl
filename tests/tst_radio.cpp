@@ -160,6 +160,21 @@ private slots:
         QTRY_COMPARE(radio.txPower(), std::optional(25));
     }
 
+    void txFilters()
+    {
+        Radio radio;
+        SimulatorTransport *sim = connectSim(radio);
+        QCOMPARE(radio.txFilter(TxFilter::SsbLowCut), std::optional(1));
+        QCOMPARE(radio.txFilter(TxFilter::SsbDataHighCut), std::optional(4));
+
+        radio.setTxFilter(TxFilter::SsbHighCut, 5);
+        radio.setTxFilter(TxFilter::SsbDataLowCut, 99);   // clamped to the table
+        QTRY_COMPARE(sim->menu(32), 5);
+        QTRY_COMPARE(sim->menu(33), 5);
+        QCOMPARE(txFilterValuesHz(TxFilter::SsbHighCut).value(5), 3000);
+        QCOMPARE(txFilterValuesHz(TxFilter::SsbDataLowCut).value(5), 500);
+    }
+
     void modeChangeRefreshesFilterLayout()
     {
         Radio radio;

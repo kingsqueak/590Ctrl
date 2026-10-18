@@ -52,6 +52,8 @@ struct MenuNumbers {
     int usbAudioIn = -1;          // USB audio input level, 0..9
     int usbAudioOut = -1;         // USB audio output level, 0..9
     int powerFine = -1;           // OFF: power in 5 W steps, ON: 1 W steps
+    // Transmit filter menus, indexed by TxFilter.
+    std::array<int, 4> txFilter = {-1, -1, -1, -1};
 };
 MenuNumbers menuNumbersFor(int modelId);
 constexpr int kUsbAudioLevelMax = 9;
@@ -62,6 +64,12 @@ constexpr int kTxPowerMin = 5;
 constexpr int kTxPowerMax = 100;
 constexpr int kTxPowerMaxAm = 25;
 int txPowerMax(Mode mode);
+
+// Transmit audio filters, set through EX menus as an index into a table.
+enum class TxFilter : int { SsbLowCut = 0, SsbHighCut = 1, SsbDataLowCut = 2, SsbDataHighCut = 3 };
+constexpr int kTxFilterCount = 4;
+// Hz for each menu index (SSB entries also apply to AM).
+const QList<int> &txFilterValuesHz(TxFilter filter);
 
 // ---------------------------------------------------------------- Equalizer
 

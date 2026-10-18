@@ -2,6 +2,8 @@
 
 #include "CatTransport.h"
 
+#include <algorithm>
+
 namespace ts590 {
 
 namespace {
@@ -88,6 +90,8 @@ void Radio::teardown()
     m_txPower.reset();
     m_tunePower.reset();
     m_powerFine = false;
+    for (auto &filter : m_txFilters)
+        filter.reset();
     for (auto &perType : m_eqCurves) {
         for (auto &curve : perType)
             curve.reset();
@@ -130,6 +134,8 @@ void Radio::requestFullState()
         if (menu >= 0)
             m_link.query(cmd::readMenu(menu));
     }
+    for (int menu : menus.txFilter)
+        m_link.query(cmd::readMenu(menu));
     for (const char *read : {"FA;", "FB;", "FR;", "FT;", "IF;", "RT;", "XT;", "DA;", "AG0;", "SQ0;", "RG;", "PC;"})
         m_link.query(read);
     if (m_modelId == kModelTs590SG)
@@ -302,6 +308,14 @@ void Radio::handleFrame(const QByteArray &frame)
                 else
                     emit usbAudioOutChanged(*field);
             }
+        } else if (const auto it = std::find(menus.txFilter.begin(), menus.txFilter.end(), menu->number);
+                   it != menus.txFilter.end()) {
+            const auto filter = TxFilter(it - menus.txFilter.begin());
+            std::optional<int> &field = m_txFilters[int(filter)];
+            if (field != int(*value)) {
+                field = int(*value);
+                emit txFilterChanged(filter);
+            }
         } else if (menu->number == menus.powerFine) {
             update(m_powerFine, *value == 1, &Radio::powerFineChanged);
         } else if (menu->number == menus.ssbFilterMode || menu->number == menus.ssbDataFilterMode) {
@@ -440,26 +454,32 @@ void Radio::copyVfo()
     m_link.query("DA;");
 }
 
-void Radio::setMenuLevel(int menu, std::optional<int> &field, int level)
+void Radio::setMenuValue(int menu, std::optional<int> &field, int value, int maximum)
 {
     if (menu < 0)
         return;
-    level = std::clamp(level, 0, kUsbAudioLevelMax);
-    field = level;
+    value = std::clamp(value, 0, maximum);
+    field = value;
     const QByteArray read = cmd::readMenu(menu);
-    m_link.send(cmd::setMenu(menu, QByteArray::number(level)), read.chopped(1));
+    m_link.send(cmd::setMenu(menu, QByteArray::number(value)), read.chopped(1));
     // EX sets don't reliably echo; read back so the UI tracks the radio.
     m_link.query(read);
 }
 
 void Radio::setUsbAudioIn(int level)
 {
-    setMenuLevel(menuNumbersFor(m_modelId).usbAudioIn, m_usbAudioIn, level);
+    setMenuValue(menuNumbersFor(m_modelId).usbAudioIn, m_usbAudioIn, level, kUsbAudioLevelMax);
 }
 
 void Radio::setUsbAudioOut(int level)
 {
-    setMenuLevel(menuNumbersFor(m_modelId).usbAudioOut, m_usbAudioOut, level);
+    setMenuValue(menuNumbersFor(m_modelId).usbAudioOut, m_usbAudioOut, level, kUsbAudioLevelMax);
+}
+
+void Radio::setTxFilter(TxFilter filter, int index)
+{
+    setMenuValue(menuNumbersFor(m_modelId).txFilter[int(filter)], m_txFilters[int(filter)], index,
+                 int(txFilterValuesHz(filter).size()) - 1);
 }
 
 void Radio::setRit(bool on)

@@ -38,8 +38,6 @@ private:
     void paintSegments(QPainter &p, const QRect &bar, bool transmit);
     QColor segmentColor(int segment, bool transmit) const;
     int peakTextWidth() const;
-    int receiveHeight() const;
-    int transmitHeight() const;
 
     QFont m_peakFont;
     QFont m_scaleFont;

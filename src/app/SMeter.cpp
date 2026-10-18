@@ -14,14 +14,10 @@ constexpr int kTop = 2;
 constexpr int kSegmentGap = 2;
 constexpr int kSpacing = 10;
 
-// Receive layout.
-constexpr int kRxBarHeight = 16;
-
-// Transmit layout: power bar, then three thin lines.
-constexpr int kTxBarHeight = 10;
-constexpr int kTxLineHeight = 6;
-constexpr int kTxLineGap = 2;
-constexpr int kTxLabelPixelSize = 8;
+// The meter scales its bars to the height it's given, within these limits.
+constexpr int kMinHeight = 40;
+constexpr int kPreferredHeight = 60;
+constexpr int kMaxHeight = 64;
 
 const QColor kGreen(0x2e, 0xcc, 0x71);
 const QColor kYellow(0xf1, 0xc4, 0x0f);
@@ -67,8 +63,8 @@ SMeter::SMeter(int peakPointSize, QWidget *parent)
     m_peakFont.setPointSize(peakPointSize);
     m_peakFont.setBold(true);
     m_scaleFont.setPointSizeF(font().pointSizeF() * 0.85);
-    m_txLabelFont.setPixelSize(kTxLabelPixelSize);
-    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    setMaximumHeight(kMaxHeight);
     setToolTip(tr("Signal strength with peak hold. While transmitting: power, with SWR, COMP and ALC below."));
 
     m_peakHold.setSingleShot(true);
@@ -126,26 +122,16 @@ int SMeter::peakTextWidth() const
     return QFontMetrics(m_peakFont).horizontalAdvance(QStringLiteral("S9+60"));
 }
 
-int SMeter::receiveHeight() const
-{
-    return kTop + kRxBarHeight + 2 + QFontMetrics(m_scaleFont).height();
-}
-
-int SMeter::transmitHeight() const
-{
-    return kTop + kTxBarHeight + 3 + 3 * kTxLineHeight + 2 * kTxLineGap;
-}
-
 QSize SMeter::sizeHint() const
 {
-    // Same height in both modes so the layout doesn't jump on key-up.
-    const int height = std::max({receiveHeight(), transmitHeight(), QFontMetrics(m_peakFont).height()});
-    return {400, height + 2};
+    return {400, kPreferredHeight};
 }
 
 QSize SMeter::minimumSizeHint() const
 {
-    return {200 + peakTextWidth(), sizeHint().height()};
+    // Both modes lay out in whatever height there is, so key-up never
+    // changes the widget's size.
+    return {200 + peakTextWidth(), std::max(kMinHeight, QFontMetrics(m_peakFont).height())};
 }
 
 QColor SMeter::segmentColor(int segment, bool transmit) const
@@ -197,7 +183,9 @@ void SMeter::paintEvent(QPaintEvent *)
 
 void SMeter::paintReceive(QPainter &p, const QRect &area)
 {
-    const QRect bar(area.left(), kTop, area.width(), kRxBarHeight);
+    // Bar takes everything above the scale labels.
+    const int labelHeight = QFontMetrics(m_scaleFont).height();
+    const QRect bar(area.left(), kTop, area.width(), area.height() - kTop - 2 - labelHeight - 2);
     paintSegments(p, bar, false);
 
     // Scale labels, centered on the end of their segment.
@@ -218,6 +206,12 @@ void SMeter::paintReceive(QPainter &p, const QRect &area)
 
 void SMeter::paintTransmit(QPainter &p, const QRect &area)
 {
+    // Power bar on top, then three thin lines, sized from the height.
+    const int available = area.height() - 2 * kTop;
+    const int lineHeight = std::max(4, available * 14 / 100);
+    const int lineGap = std::max(2, available * 4 / 100);
+    const int barHeight = available - 3 * lineHeight - 2 * lineGap - 3;
+    m_txLabelFont.setPixelSize(std::clamp(lineHeight + 2, 8, 12));
     const QFontMetrics metrics(m_txLabelFont);
     const int labelWidth = metrics.horizontalAdvance(QStringLiteral("SWR 3.0")) + 6;
     // Value column at the right end of the lines (COMP in dB).
@@ -233,7 +227,7 @@ void SMeter::paintTransmit(QPainter &p, const QRect &area)
                    Qt::AlignLeft | Qt::AlignVCenter, text);
     };
 
-    const QRect bar(left, kTop, width, kTxBarHeight);
+    const QRect bar(left, kTop, width, barHeight);
     paintSegments(p, bar, true);
     label(bar, QStringLiteral("PWR"));
 
@@ -241,14 +235,14 @@ void SMeter::paintTransmit(QPainter &p, const QRect &area)
     // filled in its zone color.
     int top = bar.bottom() + 3;
     for (int i = 0; i < 3; ++i) {
-        const QRect line(left, top, width, kTxLineHeight);
+        const QRect line(left, top, width, lineHeight);
         QColor track = blue;
         track.setAlphaF(0.15);
         p.fillRect(line, track);
         for (int dot = 1; dot <= m_txMeters[i]; ++dot) {
             const int x0 = left + width * (dot - 1) / kSMeterMaxDots;
             const int x1 = left + width * dot / kSMeterMaxDots;
-            p.fillRect(QRect(x0, top, x1 - x0, kTxLineHeight), txLineColor(i, dot, blue));
+            p.fillRect(QRect(x0, top, x1 - x0, lineHeight), txLineColor(i, dot, blue));
         }
         QString text = QString::fromLatin1(kTxLineLabels[i]);
         if (i == 0)
@@ -260,6 +254,6 @@ void SMeter::paintTransmit(QPainter &p, const QRect &area)
                              metrics.height()),
                        Qt::AlignRight | Qt::AlignVCenter, tr("%1 dB").arg(m_txMeters[1]));
         }
-        top += kTxLineHeight + kTxLineGap;
+        top += lineHeight + lineGap;
     }
 }

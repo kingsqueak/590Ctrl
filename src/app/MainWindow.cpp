@@ -15,6 +15,7 @@
 #include <QComboBox>
 #include <QDockWidget>
 #include <QFormLayout>
+#include <QFrame>
 #include <QGridLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -255,8 +256,10 @@ QWidget *MainWindow::createVfoPanel()
 {
     m_vfoA = new FrequencyDisplay(kVfoAPointSize);
     m_vfoA->setLabel(QStringLiteral("A"));
-    m_vfoB = new FrequencyDisplay(18);
+    m_vfoB = new FrequencyDisplay(kVfoAPointSize / 2);
     m_vfoB->setLabel(QStringLiteral("B"));
+    for (FrequencyDisplay *display : {m_vfoA, m_vfoB})
+        display->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 
     m_vfoButtons = new QButtonGroup(this);
     m_vfoButtons->setExclusive(true);
@@ -295,21 +298,33 @@ QWidget *MainWindow::createVfoPanel()
     // Peak readout at half the size of the main VFO digits.
     m_sMeter = new SMeter(kVfoAPointSize / 2);
 
-    auto *side = new QVBoxLayout;
-    side->addWidget(m_sMeter);
-    auto *statusRow = new QHBoxLayout;
-    statusRow->addLayout(vfoRow);
-    statusRow->addWidget(m_vfoStatus);
-    statusRow->addStretch();
-    statusRow->addWidget(m_txIndicator);
-    side->addLayout(statusRow);
-    side->addWidget(m_vfoB);
+    // One inset box, like a display window: VFO A on top, VFO B below it,
+    // then the VFO buttons.
+    auto *buttonRow = new QHBoxLayout;
+    buttonRow->addLayout(vfoRow);
+    buttonRow->addWidget(m_vfoStatus);
+    buttonRow->addStretch();
+    buttonRow->addWidget(m_txIndicator);
+
+    auto *vfoBox = new QFrame;
+    vfoBox->setFrameShape(QFrame::StyledPanel);
+    vfoBox->setFrameShadow(QFrame::Sunken);
+    vfoBox->setAutoFillBackground(true);
+    vfoBox->setBackgroundRole(QPalette::Base);
+    auto *boxLayout = new QVBoxLayout(vfoBox);
+    boxLayout->setContentsMargins(4, 4, 8, 6);
+    boxLayout->setSpacing(2);
+    boxLayout->addWidget(m_vfoA);
+    boxLayout->addWidget(m_vfoB);
+    boxLayout->addSpacing(4);
+    boxLayout->addLayout(buttonRow);
+    boxLayout->addStretch();
 
     auto *panel = new QWidget;
     auto *layout = new QHBoxLayout(panel);
     layout->setContentsMargins(0, 0, 0, 0);
-    layout->addWidget(m_vfoA, 3);
-    layout->addLayout(side, 2);
+    layout->addWidget(vfoBox, 3);
+    layout->addWidget(m_sMeter, 2, Qt::AlignVCenter);
     m_radioControls << m_vfoA << m_vfoB;
     return panel;
 }

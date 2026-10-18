@@ -58,6 +58,11 @@ public:
     bool powered() const { return m_powered; }
     bool transmitting() const { return m_transmitting; }
     bool vox() const { return m_vox; }
+    int voxGain() const { return m_voxGain; }
+    QByteArray antenna() const { return m_antenna; }
+    bool attenuator() const { return m_attenuator; }
+    bool preamp() const { return m_preamp; }
+    QByteArray tuner() const { return m_tuner; }
     // Pretends to key up (reported via AI as TX/RX) with these meter readings.
     void simulateTransmit(bool on, int swr = 0, int comp = 0, int alc = 0);
 
@@ -106,6 +111,11 @@ private:
     bool m_panelOff = false;
     QElapsedTimer m_booting;
     bool m_vox = false;
+    int m_voxGain = 4;
+    QByteArray m_antenna = "100";   // AN P1 P2 P3
+    bool m_attenuator = false;
+    bool m_preamp = false;
+    QByteArray m_tuner = "000";   // AC P1 P2 P3
     bool m_transmitting = false;
     int m_txMeters[3] = {};   // SWR, COMP, ALC
     int m_noiseBlanker = 0;

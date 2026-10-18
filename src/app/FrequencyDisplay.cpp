@@ -152,7 +152,7 @@ void FrequencyDisplay::paintEvent(QPaintEvent *)
             const int middle = labelArea.center().y();
             p.drawText(labelArea.adjusted(0, 0, 0, middle - labelArea.bottom()), Qt::AlignLeft | Qt::AlignBottom,
                        m_label);
-            p.setPen(palette().color(QPalette::Highlight));
+            p.setPen(palette().color(QPalette::Accent));
             p.drawText(labelArea.adjusted(0, middle - labelArea.top() + 2, 0, 0), Qt::AlignLeft | Qt::AlignTop,
                        m_role);
         }
@@ -171,7 +171,7 @@ void FrequencyDisplay::paintEvent(QPaintEvent *)
         p.setPen(small ? palette().color(QPalette::PlaceholderText) : palette().color(QPalette::Text));
         p.drawText(QRect(x, area.top(), w, area.height()), Qt::AlignCenter, QString(c));
         if (isDigit && place == m_hoverPlace && hasFocus()) {
-            p.fillRect(QRect(x + 1, area.bottom() - 2, w - 2, 3), palette().highlight());
+            p.fillRect(QRect(x + 1, area.bottom() - 2, w - 2, 3), palette().accent());
         } else if (isDigit && place == m_hoverPlace) {
             p.fillRect(QRect(x + 1, area.bottom() - 1, w - 2, 2), palette().mid());
         }

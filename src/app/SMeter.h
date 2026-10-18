@@ -6,7 +6,7 @@
 // Segmented meter matching the radio's 30-dot display.
 //
 // Receive: S-meter with an S-unit scale and a numeric peak-hold readout on
-// the right. Below S5 is the interface blue, S5..S9 green, S9..+20 orange,
+// the right. Below S5 is the system accent blue, S5..S9 green, S9..+20 orange,
 // above +20 red.
 //
 // Transmit: the radio's power meter as the main bar, with SWR, COMP and ALC

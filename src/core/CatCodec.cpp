@@ -386,6 +386,24 @@ QByteArray micGain(int level) { return "MG" + digits(std::clamp(level, 0, kMicGa
 
 QByteArray txMonitor(int level) { return "ML" + digits(std::clamp(level, 0, 20), 3) + ';'; }
 
+QByteArray voxGain(int level) { return "VG" + digits(std::clamp(level, 0, kVoxGainMax), 3) + ';'; }
+
+QByteArray antenna(int number) { return number == 2 ? "AN299;" : "AN199;"; }
+
+QByteArray rxAntenna(bool on) { return on ? "AN919;" : "AN909;"; }
+
+QByteArray driveOut(bool on) { return on ? "AN991;" : "AN990;"; }
+
+QByteArray attenuator(bool on) { return on ? "RA01;" : "RA00;"; }
+
+QByteArray preamp(bool on) { return on ? "PA1;" : "PA0;"; }
+
+QByteArray startTuning() { return "AC111;"; }
+
+QByteArray stopTuning(bool rxIn) { return QByteArray("AC") + (rxIn ? '1' : '0') + "10;"; }
+
+QByteArray tuner(bool rxIn, bool txIn) { return QByteArray("AC") + (rxIn ? '1' : '0') + (txIn ? '1' : '0') + "0;"; }
+
 QByteArray tunePower(int watts) { return "TP" + digits(std::clamp(watts, kTxPowerMin, kTxPowerMax), 3) + ';'; }
 
 QByteArray mode(Mode mode) { return "MD" + QByteArray::number(int(mode)) + ';'; }

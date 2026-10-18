@@ -174,6 +174,10 @@ void Radio::resetRadioState()
 {
     m_keyed = false;
     m_vox = false;
+    m_voxGain.reset();
+    m_antenna = 1;
+    m_rxAntenna = m_driveOut = m_attenuator = m_preamp = false;
+    m_rxTuner = m_txTuner = m_tunerTuning = false;
     m_modelId = 0;
     m_firmware.clear();
     m_mode = Mode::None;
@@ -242,7 +246,7 @@ void Radio::requestFullState()
     }
     for (int menu : menus.txFilter)
         m_link.query(cmd::readMenu(menu));
-    for (const char *read : {"FA;", "FB;", "FR;", "FT;", "IF;", "RT;", "XT;", "DA;", "AG0;", "SQ0;", "RG;", "PC;", "NT;", "BP;", "NB;", "NR;", "CG;", "MG;", "ML;", "VX;"})
+    for (const char *read : {"FA;", "FB;", "FR;", "FT;", "IF;", "RT;", "XT;", "DA;", "AG0;", "SQ0;", "RG;", "PC;", "NT;", "BP;", "NB;", "NR;", "CG;", "MG;", "ML;", "VX;", "VG;", "AN;", "RA;", "PA;", "AC;"})
         m_link.query(read);
     if (m_modelId == kModelTs590SG)
         m_link.query("TP;");
@@ -463,6 +467,33 @@ void Radio::handleFrame(const QByteArray &frame)
             m_txMeters[meter] = *dots;
             emit txMetersChanged();
         }
+    } else if (name == "VG" && frame.size() == 5) {
+        if (const auto level = numberAt(frame, 2); level && m_voxGain != *level) {
+            m_voxGain = *level;
+            emit voxGainChanged(*level);
+        }
+    } else if (name == "AN" && frame.size() == 5) {
+        const int antenna = frame[2] == '2' ? 2 : 1;
+        const bool rxAntenna = frame[3] == '1';
+        const bool driveOut = frame[4] == '1';
+        if (antenna != m_antenna || rxAntenna != m_rxAntenna || driveOut != m_driveOut) {
+            m_antenna = antenna;
+            m_rxAntenna = rxAntenna;
+            m_driveOut = driveOut;
+            emit antennaChanged();
+        }
+    } else if (name == "PA" && frame.size() >= 3) {
+        update(m_preamp, frame[2] == '1', &Radio::preampChanged);
+    } else if (name == "AC" && frame.size() == 5) {
+        const bool rx = frame[2] == '1', tx = frame[3] == '1', tuning = frame[4] == '1';
+        if (rx != m_rxTuner || tx != m_txTuner || tuning != m_tunerTuning) {
+            m_rxTuner = rx;
+            m_txTuner = tx;
+            m_tunerTuning = tuning;
+            emit tunerChanged();
+        }
+    } else if (name == "RA" && frame.size() >= 4) {
+        update(m_attenuator, frame.sliced(2, 2) == "01", &Radio::attenuatorChanged);
     } else if (name == "VX" && frame.size() == 3) {
         update(m_vox, frame[2] == '1', &Radio::voxChanged);
     } else if (name == "TX") {
@@ -582,10 +613,15 @@ void Radio::handleRejected(const QByteArray &command, char code)
         m_link.query(command.left(2) + ';');
         return;
     }
-    if (command == "TX0;") {
+    if (command == "TX0;" || command == "TX2;") {
         m_keyed = false;
         emit message(tr("The radio refused to transmit (check TX inhibit and the band edges)."));
         emit transmitChanged(false);
+        return;
+    }
+    if (command == cmd::startTuning()) {
+        emit message(tr("The radio refused to start tuning (the tuner may not cover this band)."));
+        m_link.query("AC;");
         return;
     }
     if (command.startsWith("EQ")) {
@@ -814,6 +850,55 @@ void Radio::setVox(bool on)
     m_link.query("VX;");
 }
 
+void Radio::setVoxGain(int level)
+{
+    setLevel(&cmd::voxGain, m_voxGain, level, kVoxGainMax);
+}
+
+void Radio::setAntenna(int number)
+{
+    m_link.send(cmd::antenna(number));
+    m_link.query("AN;");
+}
+
+void Radio::setRxAntenna(bool on)
+{
+    m_link.send(cmd::rxAntenna(on));
+    m_link.query("AN;");
+}
+
+void Radio::setDriveOut(bool on)
+{
+    m_link.send(cmd::driveOut(on));
+    m_link.query("AN;");
+}
+
+void Radio::setAttenuator(bool on)
+{
+    m_link.send(cmd::attenuator(on), "RA");
+    m_link.query("RA;");
+}
+
+void Radio::setPreamp(bool on)
+{
+    m_link.send(cmd::preamp(on), "PA");
+    m_link.query("PA;");
+}
+
+void Radio::setTuner(bool on)
+{
+    m_link.send(cmd::tuner(m_rxTuner, on), "AC");
+    m_link.query("AC;");
+}
+
+void Radio::setTunerTuning(bool on)
+{
+    if (m_state != State::Connected)
+        return;
+    m_link.send(on ? cmd::startTuning() : cmd::stopTuning(m_rxTuner), "AC");
+    m_link.query("AC;");
+}
+
 void Radio::setTransmit(bool on)
 {
     if (m_state != State::Connected && on)
@@ -822,6 +907,14 @@ void Radio::setTransmit(bool on)
     // Same key for TX and RX: a quick tap that's still queued collapses to
     // the final state instead of keying up and down.
     m_link.send(on ? "TX0;" : "RX;", "TX");
+}
+
+void Radio::setTuneCarrier(bool on)
+{
+    if (m_state != State::Connected && on)
+        return;
+    m_keyed = on;
+    m_link.send(on ? "TX2;" : "RX;", "TX");
 }
 
 void Radio::setMode(Mode mode)

@@ -361,6 +361,23 @@ private slots:
         QVERIFY(!sim->transmitting());
     }
 
+    void tuneCycleAndTuneCarrier()
+    {
+        Radio radio;
+        SimulatorTransport *sim = connectSim(radio);
+        radio.setTunerTuning(true);
+        QTRY_VERIFY(radio.tunerTuning());
+        QVERIFY(radio.tuner());               // tuning puts the tuner in line
+        QTRY_VERIFY(!radio.tunerTuning());    // and finishes by itself
+        QTRY_VERIFY(!radio.transmitting());
+
+        radio.setTuneCarrier(true);
+        QTRY_VERIFY(radio.transmitting());
+        QVERIFY(sim->received().contains("TX2"));
+        radio.setTuneCarrier(false);
+        QTRY_VERIFY(!radio.transmitting());
+    }
+
     void disconnectReleasesTransmit()
     {
         Radio radio;
@@ -373,6 +390,39 @@ private slots:
         const QByteArrayList sent = sim->received();
         QCOMPARE(sent.value(sent.size() - 2), QByteArray("RX"));   // then the AI restore
         QVERIFY(!sim->transmitting());
+    }
+
+    void voxGainAntennaAndAttenuator()
+    {
+        Radio radio;
+        SimulatorTransport *sim = connectSim(radio);
+        QCOMPARE(radio.voxGain(), std::optional(4));
+        QCOMPARE(radio.antenna(), 1);
+
+        radio.setVoxGain(7);
+        QTRY_COMPARE(sim->voxGain(), 7);
+
+        radio.setAntenna(2);
+        QTRY_COMPARE(radio.antenna(), 2);
+        radio.setRxAntenna(true);
+        QTRY_VERIFY(radio.rxAntenna());
+        radio.setDriveOut(true);
+        QTRY_VERIFY(radio.driveOut());
+        QCOMPARE(sim->antenna(), QByteArray("211"));   // each set touched only its field
+
+        radio.setAttenuator(true);
+        QTRY_VERIFY(radio.attenuator());
+        QVERIFY(sim->attenuator());
+
+        radio.setPreamp(true);
+        QTRY_VERIFY(radio.preamp());
+        QVERIFY(sim->preamp());
+
+        radio.setTuner(true);
+        QTRY_VERIFY(radio.tuner());
+        QCOMPARE(sim->tuner(), QByteArray("010"));   // in line, not tuning
+        radio.setTuner(false);
+        QTRY_VERIFY(!radio.tuner());
     }
 
     void modeChangeRefreshesFilterLayout()

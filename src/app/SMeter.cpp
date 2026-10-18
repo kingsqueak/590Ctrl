@@ -136,7 +136,7 @@ QSize SMeter::minimumSizeHint() const
 
 QColor SMeter::segmentColor(int segment, bool transmit) const
 {
-    const QColor blue = palette().color(QPalette::Highlight);
+    const QColor blue = palette().color(QPalette::Accent);
     // Segment n covers dots (n-1, n].
     if (transmit || segment <= sMeterDotsForS(5))
         return blue;
@@ -218,7 +218,7 @@ void SMeter::paintTransmit(QPainter &p, const QRect &area)
     const int valueWidth = metrics.horizontalAdvance(QStringLiteral("30 dB")) + 6;
     const int left = area.left() + labelWidth;
     const int width = area.width() - labelWidth - valueWidth;
-    const QColor blue = palette().color(QPalette::Highlight);
+    const QColor blue = palette().color(QPalette::Accent);
 
     p.setFont(m_txLabelFont);
     p.setPen(palette().color(QPalette::PlaceholderText));

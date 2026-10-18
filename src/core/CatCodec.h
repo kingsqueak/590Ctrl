@@ -70,6 +70,7 @@ int txPowerMax(Mode mode);
 constexpr int kCarrierLevelMax = 100;
 constexpr int kMicGainMax = 100;
 int txMonitorMax(int modelId);   // 20 on the SG, 9 on the S
+constexpr int kVoxGainMax = 9;   // VG
 
 // S-meter (SM): 0..30 display dots. Matches the front-panel scale: S1, S3,
 // S5, S7, S9 every 3 dots (S9 = 15), then +20, +40, +60 dB every 5 dots.
@@ -208,6 +209,19 @@ QByteArray tunePower(int watts);                 // TP (TS-590SG only)
 QByteArray carrierLevel(int level);              // CG
 QByteArray micGain(int level);                   // MG
 QByteArray txMonitor(int level);                 // ML, 0 = off
+QByteArray voxGain(int level);                   // VG
+// AN sets one field at a time; the others are sent as 9 ("no change").
+QByteArray antenna(int number);                  // ANT1 / ANT2
+QByteArray rxAntenna(bool on);                   // RX ANT in use
+QByteArray driveOut(bool on);                    // DRV out (antenna out on an SG set up for it)
+QByteArray attenuator(bool on);                  // RA
+QByteArray preamp(bool on);                      // PA
+// AC: the RX-AT field can't be changed by command, so it's echoed back as
+// read; P3 = 0 so switching the tuner in or out never starts a tune.
+QByteArray tuner(bool rxIn, bool txIn);
+// Starting a tune must be sent exactly as "AC111;" per the reference guide.
+QByteArray startTuning();
+QByteArray stopTuning(bool rxIn);
 QByteArray notch(NotchMode mode, bool wide);     // NT; `wide` only counts in Manual
 QByteArray noiseBlanker(NoiseBlanker nb);        // NB
 QByteArray nbLevel(int level);                   // NL

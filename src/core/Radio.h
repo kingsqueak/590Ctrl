@@ -58,6 +58,14 @@ public:
     int sMeter() const { return m_sMeter; }
     bool transmitting() const { return m_transmitting; }
     bool vox() const { return m_vox; }   // break-in in CW
+    std::optional<int> voxGain() const { return m_voxGain; }
+    int antenna() const { return m_antenna; }   // 1 or 2
+    bool rxAntenna() const { return m_rxAntenna; }
+    bool driveOut() const { return m_driveOut; }
+    bool attenuator() const { return m_attenuator; }
+    bool preamp() const { return m_preamp; }
+    bool tuner() const { return m_txTuner; }          // TX-AT in line
+    bool tunerTuning() const { return m_tunerTuning; }
     int txMeter(TxMeter meter) const { return m_txMeters[int(meter) - 1]; }   // dots, 0..30
     // Menu-backed USB audio levels, 0..9; nullopt until read.
     std::optional<int> usbAudioIn() const { return m_usbAudioIn; }
@@ -113,8 +121,19 @@ public:
     void setMicGain(int level);
     void setTxMonitor(int level);   // 0 turns the monitor off
     void setVox(bool on);
+    void setVoxGain(int level);
+    void setAntenna(int number);
+    void setRxAntenna(bool on);
+    void setDriveOut(bool on);
+    void setAttenuator(bool on);
+    void setPreamp(bool on);
+    void setTuner(bool on);   // TX-AT in/through; doesn't start a tune
+    // Runs (or aborts) an automatic tune cycle; transmits while it runs.
+    void setTunerTuning(bool on);
     // TX0 (SEND, mic input) / RX.
     void setTransmit(bool on);
+    // TX2 (TX Tune: carrier at the tune power level) / RX.
+    void setTuneCarrier(bool on);
     void setTxFilter(TxFilter filter, int index);
     void setNotch(NotchMode mode, bool wide);
     void setNotchPosition(int position);
@@ -154,6 +173,11 @@ signals:
     void micGainChanged(int level);
     void txMonitorChanged(int level);
     void voxChanged(bool on);
+    void voxGainChanged(int level);
+    void antennaChanged();   // ANT1/2, RX ANT or DRV
+    void attenuatorChanged(bool on);
+    void preampChanged(bool on);
+    void tunerChanged();
     void txFilterChanged(ts590::TxFilter filter);
     void notchChanged();   // mode or bandwidth
     void notchPositionChanged(int position);
@@ -223,6 +247,15 @@ private:
     int m_sMeter = 0;
     bool m_transmitting = false;
     bool m_vox = false;
+    std::optional<int> m_voxGain;
+    int m_antenna = 1;
+    bool m_rxAntenna = false;
+    bool m_driveOut = false;
+    bool m_attenuator = false;
+    bool m_preamp = false;
+    bool m_rxTuner = false;
+    bool m_txTuner = false;
+    bool m_tunerTuning = false;
     int m_txMeters[3] = {};   // SWR, COMP, ALC
     std::optional<int> m_usbAudioIn;
     std::optional<int> m_usbAudioOut;

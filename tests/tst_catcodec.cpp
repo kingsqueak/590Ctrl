@@ -127,6 +127,20 @@ private slots:
         QCOMPARE(txMonitorMax(kModelTs590S), 9);
     }
 
+    void encodesVoxGainAntennaAndAttenuator()
+    {
+        QCOMPARE(cmd::voxGain(12), QByteArray("VG009;"));
+        QCOMPARE(cmd::antenna(2), QByteArray("AN299;"));
+        QCOMPARE(cmd::rxAntenna(true), QByteArray("AN919;"));
+        QCOMPARE(cmd::driveOut(false), QByteArray("AN990;"));
+        QCOMPARE(cmd::attenuator(true), QByteArray("RA01;"));
+        QCOMPARE(cmd::preamp(false), QByteArray("PA0;"));
+        QCOMPARE(cmd::tuner(false, true), QByteArray("AC010;"));
+        QCOMPARE(cmd::tuner(true, false), QByteArray("AC100;"));
+        QCOMPARE(cmd::startTuning(), QByteArray("AC111;"));
+        QCOMPARE(cmd::stopTuning(false), QByteArray("AC010;"));
+    }
+
     void menuNumbersDependOnModel()
     {
         const MenuNumbers sg = menuNumbersFor(kModelTs590SG);

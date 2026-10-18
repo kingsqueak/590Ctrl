@@ -40,7 +40,7 @@ void PowerButton::paintEvent(QPaintEvent *)
     const double side = std::min(width(), height());
     const QRectF square((width() - side) / 2, (height() - side) / 2, side, side);
 
-    QColor color = m_powered ? palette().color(QPalette::Highlight) : palette().color(QPalette::PlaceholderText);
+    QColor color = m_powered ? palette().color(QPalette::Accent) : palette().color(QPalette::PlaceholderText);
     if (!isEnabled())
         color.setAlphaF(0.4);
     else if (isDown())
@@ -69,7 +69,7 @@ void PowerButton::paintEvent(QPaintEvent *)
     p.drawLine(QPointF(center.x(), ring.top() - side * 0.06), QPointF(center.x(), center.y()));
 
     if (hasFocus()) {
-        p.setPen(QPen(palette().color(QPalette::Highlight), 1, Qt::DotLine));
+        p.setPen(QPen(palette().color(QPalette::Accent), 1, Qt::DotLine));
         p.drawEllipse(square.adjusted(1, 1, -1, -1));
     }
 }

@@ -140,6 +140,16 @@ QByteArray SimulatorTransport::answerFor(QByteArrayView name) const
         return "IS " + digits(m_is, 4);
     if (name == "VX")
         return m_vox ? "VX1" : "VX0";
+    if (name == "VG")
+        return "VG" + digits(m_voxGain, 3);
+    if (name == "AN")
+        return "AN" + m_antenna;
+    if (name == "RA")
+        return m_attenuator ? "RA0100" : "RA0000";
+    if (name == "PA")
+        return m_preamp ? "PA10" : "PA00";
+    if (name == "AC")
+        return "AC" + m_tuner;
     if (name == "RT")
         return m_rit ? "RT1" : "RT0";
     if (name == "XT")
@@ -290,6 +300,59 @@ void SimulatorTransport::handle(const QByteArray &command)
     }
 
     // ---- set commands and parameterized reads
+    if (name == "VG") {
+        const auto level = args.size() == 3 ? number(args) : std::nullopt;
+        if (!level)
+            return reply("?");
+        m_voxGain = std::min(*level, kVoxGainMax);
+        return echo(answerFor("VG"));
+    }
+    if (name == "AN") {
+        if (args.size() != 3)
+            return reply("?");
+        // 9 = leave that field alone.
+        const char valid[3][3] = {"12", "01", "01"};
+        for (int i = 0; i < 3; ++i) {
+            if (args[i] == '9')
+                continue;
+            if (args[i] != valid[i][0] && args[i] != valid[i][1])
+                return reply("?");
+            m_antenna[i] = args[i];
+        }
+        return echo(answerFor("AN"));
+    }
+    if (name == "PA") {
+        if (args != "0" && args != "1")
+            return reply("?");
+        m_preamp = args == "1";
+        return echo(answerFor("PA"));
+    }
+    if (name == "AC") {
+        if (args.size() != 3 || args[1] < '0' || args[1] > '1' || args[2] < '0' || args[2] > '1')
+            return reply("?");
+        // RX-AT can't be set by command; P3 = 1 starts a tune (needs TX-AT in).
+        m_tuner[1] = args[1];
+        m_tuner[2] = args[2] == '1' && args[1] == '1' ? '1' : '0';
+        echo(answerFor("AC"));
+        if (m_tuner[2] == '1') {
+            // Tuning transmits briefly, then finishes on its own.
+            m_transmitting = true;
+            echo("TX0");
+            QTimer::singleShot(300, this, [this] {
+                m_tuner[2] = '0';
+                m_transmitting = false;
+                echo(answerFor("AC"));
+                echo("RX");
+            });
+        }
+        return;
+    }
+    if (name == "RA") {
+        if (args != "00" && args != "01")
+            return reply("?");
+        m_attenuator = args == "01";
+        return echo(answerFor("RA"));
+    }
     if (name == "VX") {
         if (args != "0" && args != "1")
             return reply("?");

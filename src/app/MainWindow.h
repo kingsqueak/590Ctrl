@@ -56,6 +56,8 @@ private:
     void refreshNotch();
     void refreshNoise();
     void refreshMonitor();
+    void refreshAntenna();
+    void refreshFrontEnd();   // ATT / PRE button
     void refreshEq(ts590::EqType type);
     void showMessage(const QString &text);
 
@@ -79,6 +81,12 @@ private:
 
     QButtonGroup *m_modeButtons = nullptr;
     QCheckBox *m_dataCheck = nullptr;
+    QPushButton *m_antennaButton = nullptr;   // ANT1 / ANT2
+    QPushButton *m_rxAntennaButton = nullptr;
+    QPushButton *m_driveOutButton = nullptr;
+    QPushButton *m_tunerButton = nullptr;
+    QPushButton *m_tuneCycleButton = nullptr;   // ATun: run an AT tune
+    QPushButton *m_attenuatorButton = nullptr;   // cycles ATT -> PRE -> off
 
     QSlider *m_afSlider = nullptr;
     QSlider *m_sqlSlider = nullptr;
@@ -104,9 +112,11 @@ private:
     QSlider *m_txPowerSlider = nullptr;
     QSlider *m_tunePowerSlider = nullptr;
     QSlider *m_carrierSlider = nullptr;
+    QSlider *m_voxGainSlider = nullptr;
     QPushButton *m_voxButton = nullptr;
     QPushButton *m_sendButton = nullptr;   // latching transmit
     QPushButton *m_txButton = nullptr;     // momentary transmit
+    QPushButton *m_tuneCarrierButton = nullptr;   // TUN: latching TX Tune carrier
 
     QRadioButton *m_filterA = nullptr;
     QRadioButton *m_filterB = nullptr;

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(590Ctrl VERSION 0.1.0 DESCRIPTION "Kenwood TS-590SG control" LANGUAGES CXX)
+project(590Ctrl VERSION 0.10 DESCRIPTION "Kenwood TS-590SG control" LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -11,7 +11,7 @@ set(QT_COMPONENTS Core Widgets SerialPort)
 if(BUILD_TESTING)
     list(APPEND QT_COMPONENTS Test)
 endif()
-find_package(Qt6 6.4 REQUIRED COMPONENTS ${QT_COMPONENTS})
+find_package(Qt6 6.8 REQUIRED COMPONENTS ${QT_COMPONENTS})
 qt_standard_project_setup()
 
 # Radio protocol, transport and state model. No widget dependencies so it can
@@ -46,6 +46,9 @@ set_target_properties(590Ctrl PROPERTIES
     MACOSX_BUNDLE ON
     MACOSX_BUNDLE_BUNDLE_NAME 590Ctrl
     MACOSX_BUNDLE_GUI_IDENTIFIER com.radiopathology.590ctrl
+    MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION}
+    MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
+    MACOSX_BUNDLE_COPYRIGHT "KC2RGW"
 )
 
 if(BUILD_TESTING)

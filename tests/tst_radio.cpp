@@ -270,6 +270,27 @@ private slots:
         QTRY_VERIFY(!radio.transmitting());
     }
 
+    void carrierMicAndMonitor()
+    {
+        Radio radio;
+        SimulatorTransport *sim = connectSim(radio);
+        QCOMPARE(radio.carrierLevel(), std::optional(50));
+        QCOMPARE(radio.micGain(), std::optional(50));
+        QCOMPARE(radio.txMonitor(), std::optional(0));
+
+        radio.setCarrierLevel(25);
+        radio.setMicGain(70);
+        radio.setTxMonitor(12);
+        QTRY_COMPARE(sim->carrierLevel(), 25);
+        QTRY_COMPARE(sim->micGain(), 70);
+        QTRY_COMPARE(sim->txMonitor(), 12);
+
+        radio.setTxMonitor(99);   // SG tops out at 20
+        QTRY_COMPARE(sim->txMonitor(), 20);
+        radio.setTxMonitor(0);
+        QTRY_COMPARE(sim->txMonitor(), 0);
+    }
+
     void modeChangeRefreshesFilterLayout()
     {
         Radio radio;

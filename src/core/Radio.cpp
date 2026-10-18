@@ -97,6 +97,9 @@ void Radio::teardown()
     m_txPower.reset();
     m_tunePower.reset();
     m_powerFine = false;
+    m_carrierLevel.reset();
+    m_micGain.reset();
+    m_txMonitor.reset();
     for (auto &filter : m_txFilters)
         filter.reset();
     m_notchMode = NotchMode::Off;
@@ -150,7 +153,7 @@ void Radio::requestFullState()
     }
     for (int menu : menus.txFilter)
         m_link.query(cmd::readMenu(menu));
-    for (const char *read : {"FA;", "FB;", "FR;", "FT;", "IF;", "RT;", "XT;", "DA;", "AG0;", "SQ0;", "RG;", "PC;", "NT;", "BP;", "NB;", "NR;"})
+    for (const char *read : {"FA;", "FB;", "FR;", "FT;", "IF;", "RT;", "XT;", "DA;", "AG0;", "SQ0;", "RG;", "PC;", "NT;", "BP;", "NB;", "NR;", "CG;", "MG;", "ML;"})
         m_link.query(read);
     if (m_modelId == kModelTs590SG)
         m_link.query("TP;");
@@ -263,6 +266,18 @@ void Radio::handleFrame(const QByteArray &frame)
         if (field != (frame[2] == '1')) {
             field = frame[2] == '1';
             emit ritXitChanged();
+        }
+    } else if ((name == "CG" || name == "MG" || name == "ML") && frame.size() == 5) {
+        const auto level = numberAt(frame, 2);
+        std::optional<int> &field = name == "CG" ? m_carrierLevel : name == "MG" ? m_micGain : m_txMonitor;
+        if (level && field != *level) {
+            field = *level;
+            if (name == "CG")
+                emit carrierLevelChanged(*level);
+            else if (name == "MG")
+                emit micGainChanged(*level);
+            else
+                emit txMonitorChanged(*level);
         }
     } else if ((name == "PC" || name == "TP") && frame.size() == 5) {
         const auto watts = numberAt(frame, 2);
@@ -587,6 +602,29 @@ void Radio::setPower(QByteArray (*encode)(int), std::optional<int> &field, int w
     const QByteArray command = encode(watts);
     m_link.send(command, command.left(2));
     m_link.query(command.left(2) + ';');
+}
+
+void Radio::setLevel(QByteArray (*encode)(int), std::optional<int> &field, int level, int maximum)
+{
+    field = std::clamp(level, 0, maximum);
+    const QByteArray command = encode(*field);
+    m_link.send(command, command.left(2));
+    m_link.query(command.left(2) + ';');
+}
+
+void Radio::setCarrierLevel(int level)
+{
+    setLevel(&cmd::carrierLevel, m_carrierLevel, level, kCarrierLevelMax);
+}
+
+void Radio::setMicGain(int level)
+{
+    setLevel(&cmd::micGain, m_micGain, level, kMicGainMax);
+}
+
+void Radio::setTxMonitor(int level)
+{
+    setLevel(&cmd::txMonitor, m_txMonitor, level, txMonitorMax(m_modelId));
 }
 
 void Radio::setTxPower(int watts)

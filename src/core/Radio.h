@@ -58,6 +58,9 @@ public:
     std::optional<int> txPower() const { return m_txPower; }
     std::optional<int> tunePower() const { return m_tunePower; }   // TS-590SG only
     bool powerFine() const { return m_powerFine; }   // 1 W steps; otherwise 5 W
+    std::optional<int> carrierLevel() const { return m_carrierLevel; }
+    std::optional<int> micGain() const { return m_micGain; }
+    std::optional<int> txMonitor() const { return m_txMonitor; }   // 0 = off
     // Index into txFilterValuesHz(filter); nullopt until read.
     std::optional<int> txFilter(TxFilter filter) const { return m_txFilters[int(filter)]; }
     NotchMode notchMode() const { return m_notchMode; }
@@ -96,6 +99,9 @@ public:
     void setRitXitOffset(int hz);
     void setTxPower(int watts);
     void setTunePower(int watts);
+    void setCarrierLevel(int level);
+    void setMicGain(int level);
+    void setTxMonitor(int level);   // 0 turns the monitor off
     void setTxFilter(TxFilter filter, int index);
     void setNotch(NotchMode mode, bool wide);
     void setNotchPosition(int position);
@@ -131,6 +137,9 @@ signals:
     void txPowerChanged(int watts);
     void tunePowerChanged(int watts);
     void powerFineChanged(bool fine);
+    void carrierLevelChanged(int level);
+    void micGainChanged(int level);
+    void txMonitorChanged(int level);
     void txFilterChanged(ts590::TxFilter filter);
     void notchChanged();   // mode or bandwidth
     void notchPositionChanged(int position);
@@ -158,6 +167,7 @@ private:
     void setMenuValue(int menu, std::optional<int> &field, int value, int maximum);
     void requestVfoState();
     void setPower(QByteArray (*encode)(int), std::optional<int> &field, int watts, int maximum);
+    void setLevel(QByteArray (*encode)(int), std::optional<int> &field, int level, int maximum);
     void pollMeter();
     void teardown();
 
@@ -200,6 +210,9 @@ private:
     std::optional<int> m_txPower;
     std::optional<int> m_tunePower;
     bool m_powerFine = false;
+    std::optional<int> m_carrierLevel;
+    std::optional<int> m_micGain;
+    std::optional<int> m_txMonitor;
     std::optional<int> m_txFilters[kTxFilterCount];
     NotchMode m_notchMode = NotchMode::Off;
     bool m_notchWide = false;

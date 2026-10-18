@@ -127,6 +127,7 @@ MainWindow::MainWindow(QWidget *parent)
                                                      : tr("ID %1").arg(model);
         // TX Tune power (TP) only exists on the SG.
         m_transmitForm->setRowVisible(1, model == kModelTs590SG);
+        m_monitorSlider->setMaximum(txMonitorMax(model));
         m_radioInfo->setText(tr("%1 · firmware %2 · %3")
                                  .arg(name, firmware, m_radio.link()->transport()->description()));
     });
@@ -160,6 +161,9 @@ MainWindow::MainWindow(QWidget *parent)
     connect(&m_radio, &Radio::usbAudioInChanged, this, follow(m_usbInSlider));
     connect(&m_radio, &Radio::usbAudioOutChanged, this, follow(m_usbOutSlider));
     connect(&m_radio, &Radio::txPowerChanged, this, follow(m_txPowerSlider));
+    connect(&m_radio, &Radio::carrierLevelChanged, this, follow(m_carrierSlider));
+    connect(&m_radio, &Radio::micGainChanged, this, follow(m_micGainSlider));
+    connect(&m_radio, &Radio::txMonitorChanged, this, &MainWindow::refreshMonitor);
     connect(&m_radio, &Radio::tunePowerChanged, this, follow(m_tunePowerSlider));
     connect(&m_radio, &Radio::ritXitChanged, this, &MainWindow::refreshRitXit);
     connect(&m_radio, &Radio::notchChanged, this, &MainWindow::refreshNotch);
@@ -400,6 +404,9 @@ QWidget *MainWindow::createOperatePage()
     addLevel(tr("RF gain"), m_rfSlider);
     addLevel(tr("USB in"), m_usbInSlider);
     addLevel(tr("USB out"), m_usbOutSlider);
+    m_micGainSlider = createLevelSlider(&Radio::setMicGain, kMicGainMax);
+    m_micGainSlider->setToolTip(tr("Microphone gain for SSB and AM (FM mic gain is a menu setting)"));
+    addLevel(tr("Mic gain"), m_micGainSlider);
 
     // NB / NR: the button steps through the variants like the front-panel
     // key; the slider sets the level of whichever variant is on.
@@ -418,6 +425,28 @@ QWidget *MainWindow::createOperatePage()
         row->addWidget(value);
         levelsLayout->addRow(button, row);
     };
+    // TX monitor: ML has no on/off of its own (0 is off), so the button
+    // sends 0 or the slider's level.
+    auto *monitorValue = new QLabel;
+    createNoiseRow(m_monitorButton, m_monitorSlider, monitorValue);
+    m_monitorButton->setText(tr("MON"));
+    m_monitorButton->setToolTip(tr("TX monitor: hear your own transmit audio"));
+    m_monitorSlider->setRange(1, txMonitorMax(kModelTs590SG));
+    m_monitorSlider->setValue(5);
+    m_monitorSlider->setToolTip(tr("TX monitor level"));
+    connect(m_monitorSlider, &QSlider::valueChanged, monitorValue, qOverload<int>(&QLabel::setNum));
+    monitorValue->setNum(m_monitorSlider->value());
+    connect(m_monitorSlider, &QSlider::valueChanged, this, [this](int level) {
+        if (!m_applyingRadioState && m_radio.txMonitor().value_or(0) > 0)
+            m_radio.setTxMonitor(level);
+    });
+    connect(m_monitorButton, &QPushButton::clicked, this, [this](bool on) {
+        m_radio.setTxMonitor(on ? m_monitorSlider->value() : 0);
+        // Radio caches the new level right away, so the echo won't signal a
+        // change; update the row now.
+        refreshMonitor();
+    });
+
     auto *nbValue = new QLabel;
     createNoiseRow(m_nbButton, m_nbSlider, nbValue);
     m_nbButton->setToolTip(tr("Noise blanker: OFF → NB1 → NB2 → NB1+NB2"));
@@ -627,6 +656,8 @@ QWidget *MainWindow::createTransmitGroup()
     m_txPowerSlider->setToolTip(tr("Transmit output power (5–100 W, 5–25 W in AM)"));
     m_tunePowerSlider = createPowerSlider(&Radio::setTunePower);
     m_tunePowerSlider->setToolTip(tr("Output power used for TX Tune"));
+    m_carrierSlider = createLevelSlider(&Radio::setCarrierLevel, kCarrierLevelMax);
+    m_carrierSlider->setToolTip(tr("Carrier level for CW, FSK and AM"));
 
     auto *group = new QGroupBox(tr("Transmit"));
     m_transmitForm = new QFormLayout(group);
@@ -640,6 +671,14 @@ QWidget *MainWindow::createTransmitGroup()
         row->addWidget(value);
         m_transmitForm->addRow(name, row);
     }
+    auto *carrierValue = new QLabel(QStringLiteral("0"));
+    carrierValue->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    carrierValue->setMinimumWidth(carrierValue->fontMetrics().horizontalAdvance(QStringLiteral("100 W")) + 4);
+    connect(m_carrierSlider, &QSlider::valueChanged, carrierValue, qOverload<int>(&QLabel::setNum));
+    auto *carrierRow = new QHBoxLayout;
+    carrierRow->addWidget(m_carrierSlider, 1);
+    carrierRow->addWidget(carrierValue);
+    m_transmitForm->addRow(tr("Carrier"), carrierRow);
     return group;
 }
 
@@ -725,6 +764,7 @@ void MainWindow::onStateChanged(Radio::State state)
         refreshRitXit();
         refreshNotch();
         refreshNoise();
+        refreshMonitor();
         break;
     case Radio::State::Connecting: m_radioInfo->setText(tr("Connecting…")); break;
     case Radio::State::Connected:
@@ -733,6 +773,7 @@ void MainWindow::onStateChanged(Radio::State state)
         refreshRitXit();
         refreshNotch();
         refreshNoise();
+        refreshMonitor();
         break;
     }
 }
@@ -892,6 +933,21 @@ void MainWindow::refreshNoise()
     m_nrValue->setText(nr == NoiseReduction::Off ? QString() : nrLevelText(nr, m_nrSlider->value()));
 
     m_applyingRadioState = false;
+}
+
+void MainWindow::refreshMonitor()
+{
+    const bool connected = m_radio.state() == Radio::State::Connected;
+    const int level = connected ? m_radio.txMonitor().value_or(0) : 0;
+    m_monitorButton->setChecked(level > 0);
+    m_monitorButton->setEnabled(connected);
+    m_monitorSlider->setEnabled(level > 0);
+    // While off, the slider keeps the level to restore when it's turned on.
+    if (level > 0 && !m_monitorSlider->isSliderDown()) {
+        m_applyingRadioState = true;
+        m_monitorSlider->setValue(level);
+        m_applyingRadioState = false;
+    }
 }
 
 void MainWindow::showMessage(const QString &text)

@@ -196,6 +196,11 @@ bool notchSupported(Mode mode)
     return mode != Mode::FM;
 }
 
+int txMonitorMax(int modelId)
+{
+    return modelId == kModelTs590S ? 9 : 20;
+}
+
 int txPowerMax(Mode mode)
 {
     return mode == Mode::AM ? kTxPowerMaxAm : kTxPowerMax;
@@ -374,6 +379,12 @@ QByteArray nrLevel(NoiseReduction nr, int level)
 }
 
 QByteArray notchPosition(int position) { return "BP" + digits(std::clamp(position, 0, kNotchPositionMax), 3) + ';'; }
+
+QByteArray carrierLevel(int level) { return "CG" + digits(std::clamp(level, 0, kCarrierLevelMax), 3) + ';'; }
+
+QByteArray micGain(int level) { return "MG" + digits(std::clamp(level, 0, kMicGainMax), 3) + ';'; }
+
+QByteArray txMonitor(int level) { return "ML" + digits(std::clamp(level, 0, 20), 3) + ';'; }
 
 QByteArray tunePower(int watts) { return "TP" + digits(std::clamp(watts, kTxPowerMin, kTxPowerMax), 3) + ';'; }
 

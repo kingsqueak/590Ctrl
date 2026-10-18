@@ -154,6 +154,12 @@ QByteArray SimulatorTransport::answerFor(QByteArrayView name) const
         return "NR" + QByteArray::number(m_noiseReduction);
     if (name == "RL")
         return m_noiseReduction != 0 ? "RL" + digits(m_nrLevels[m_noiseReduction], 2) : QByteArray();
+    if (name == "CG")
+        return "CG" + digits(m_carrierLevel, 3);
+    if (name == "MG")
+        return "MG" + digits(m_micGain, 3);
+    if (name == "ML")
+        return "ML" + digits(m_txMonitor, 3);
     if (name == "PC")
         return "PC" + digits(m_txPower, 3);
     if (name == "TP")
@@ -299,6 +305,19 @@ void SimulatorTransport::handle(const QByteArray &command)
             return reply("?");
         m_notchPosition = std::min(*position, kNotchPositionMax);
         return echo(answerFor("BP"));
+    }
+    if (name == "CG" || name == "MG" || name == "ML") {
+        const auto level = args.size() == 3 ? number(args) : std::nullopt;
+        if (!level)
+            return reply("?");
+        // Out-of-range values are clamped to the maximum, per the spec.
+        if (name == "CG")
+            m_carrierLevel = std::min(*level, kCarrierLevelMax);
+        else if (name == "MG")
+            m_micGain = std::min(*level, kMicGainMax);
+        else
+            m_txMonitor = std::min(*level, txMonitorMax(kModelTs590SG));
+        return echo(answerFor(name));
     }
     if (name == "PC" || name == "TP") {
         auto watts = number(args);

@@ -38,6 +38,9 @@ public:
     int ritXitOffset() const { return m_ritXitOffset; }
     int txPower() const { return m_txPower; }
     int tunePower() const { return m_tunePower; }
+    int carrierLevel() const { return m_carrierLevel; }
+    int micGain() const { return m_micGain; }
+    int txMonitor() const { return m_txMonitor; }
     int notchMode() const { return m_notchMode; }
     bool notchWide() const { return m_notchWide; }
     int notchPosition() const { return m_notchPosition; }
@@ -84,6 +87,9 @@ private:
     int m_ritXitOffset = 0;
     int m_txPower = 100;
     int m_tunePower = 10;
+    int m_carrierLevel = 50;
+    int m_micGain = 50;
+    int m_txMonitor = 0;
     int m_notchMode = 0;
     bool m_notchWide = false;
     int m_notchPosition = 64;

@@ -65,6 +65,12 @@ constexpr int kTxPowerMax = 100;
 constexpr int kTxPowerMaxAm = 25;
 int txPowerMax(Mode mode);
 
+// Carrier level (CG) and mic gain (MG, SSB/AM; FM uses a menu): 0..100.
+// TX monitor (ML): 0 = off, else the level, up to txMonitorMax.
+constexpr int kCarrierLevelMax = 100;
+constexpr int kMicGainMax = 100;
+int txMonitorMax(int modelId);   // 20 on the SG, 9 on the S
+
 // S-meter (SM): 0..30 display dots. Matches the front-panel scale: S1, S3,
 // S5, S7, S9 every 3 dots (S9 = 15), then +20, +40, +60 dB every 5 dots.
 constexpr int kSMeterMaxDots = 30;
@@ -199,6 +205,9 @@ QByteArray xit(bool on);                         // XT
 QByteArray ritXitOffset(int hz);
 QByteArray txPower(int watts);                   // PC
 QByteArray tunePower(int watts);                 // TP (TS-590SG only)
+QByteArray carrierLevel(int level);              // CG
+QByteArray micGain(int level);                   // MG
+QByteArray txMonitor(int level);                 // ML, 0 = off
 QByteArray notch(NotchMode mode, bool wide);     // NT; `wide` only counts in Manual
 QByteArray noiseBlanker(NoiseBlanker nb);        // NB
 QByteArray nbLevel(int level);                   // NL

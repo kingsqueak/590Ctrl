@@ -116,6 +116,17 @@ private slots:
         QCOMPARE(swrText(16), QStringLiteral(">3"));
     }
 
+    void encodesCarrierMicAndMonitor()
+    {
+        QCOMPARE(cmd::carrierLevel(35), QByteArray("CG035;"));
+        QCOMPARE(cmd::carrierLevel(150), QByteArray("CG100;"));
+        QCOMPARE(cmd::micGain(0), QByteArray("MG000;"));
+        QCOMPARE(cmd::txMonitor(0), QByteArray("ML000;"));
+        QCOMPARE(cmd::txMonitor(12), QByteArray("ML012;"));
+        QCOMPARE(txMonitorMax(kModelTs590SG), 20);
+        QCOMPARE(txMonitorMax(kModelTs590S), 9);
+    }
+
     void menuNumbersDependOnModel()
     {
         const MenuNumbers sg = menuNumbersFor(kModelTs590SG);

@@ -5,7 +5,7 @@ macOS and Linux. Written in C++20 with Qt 6.
 
 ![590Ctrl connected to a TS-590SG](docs/screenshot.png)
 
-Version 0.10.
+Version 0.10 · Licensed under the [GPL-3.0](LICENSE).
 
 ## Features
 
@@ -223,3 +223,19 @@ points read off a TS-590SG's display:
 
 Protocol reference: Kenwood *TS-590S/SG PC Control Command Reference Guide*
 (B5A-0316-20/01).
+
+## License
+
+Copyright (C) 2026 KC2RGW Chris
+
+590Ctrl is free software: you can redistribute it and/or modify it under the
+terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version.
+
+590Ctrl is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the [GNU General Public License](LICENSE) for more
+details.
+
+590Ctrl uses [Qt](https://www.qt.io/), which is licensed under the GNU LGPL v3.

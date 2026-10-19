@@ -119,6 +119,9 @@ public:
     // A=B: copies the receive VFO to the other one.
     void copyVfo();
     void setMode(Mode mode);
+    // Mode and DATA together, e.g. CW -> USB-DATA, which setDataMode can't do
+    // until the radio has confirmed the new mode.
+    void setMode(Mode mode, bool data);
     void setDataMode(bool on);
     void setAfGain(int level);
     void setSquelch(int level);
@@ -146,6 +149,8 @@ public:
     void setTunerTuning(bool on);
     // TX0 (SEND, mic input) / RX.
     void setTransmit(bool on);
+    // TX1 (DATA SEND: ACC2 or USB audio input, per the radio's menu) / RX.
+    void setDataTransmit(bool on);
     // TX2 (TX Tune: carrier at the tune power level) / RX.
     void setTuneCarrier(bool on);
     void setTxFilter(TxFilter filter, int index);

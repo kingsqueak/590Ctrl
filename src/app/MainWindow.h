@@ -5,6 +5,8 @@
 #include "EqPresetLibrary.h"
 #include "Qrz.h"
 #include "Radio.h"
+#include "RadioAudio.h"
+#include "TciServer.h"
 
 #include <QMainWindow>
 #include <QTimer>
@@ -15,6 +17,7 @@ class QComboBox;
 class QLabel;
 class QPushButton;
 class QRadioButton;
+class QSettings;
 class QSlider;
 class QSpinBox;
 class QFormLayout;
@@ -86,6 +89,10 @@ private:
     void refreshEq(ts590::EqType type);
     void showMessage(const QString &text);
     void showAbout();
+    void startTciServer();   // from the saved settings
+    void editTciServer();
+    void refreshTciStatus();
+    static QString tciAddress(const QSettings &settings);
 
     ts590::Radio m_radio;
     ts590::EqPresetLibrary m_eqPresets;
@@ -205,5 +212,8 @@ private:
     EqualizerPanel *m_rxEq = nullptr;
     EqualizerPanel *m_txEq = nullptr;
     QLabel *m_radioInfo = nullptr;
+    ts590::RadioAudio m_radioAudio;   // before m_tci, which uses it
+    ts590::TciServer m_tci{&m_radio};
+    QLabel *m_tciStatus = nullptr;
     QList<QWidget *> m_radioControls;   // enabled only while connected
 };

@@ -737,7 +737,7 @@ void Radio::handleRejected(const QByteArray &command, char code)
         m_link.query(command.left(2) + ';');
         return;
     }
-    if (command == "TX0;" || command == "TX2;") {
+    if (command == "TX0;" || command == "TX1;" || command == "TX2;") {
         m_keyed = false;
         emit message(tr("The radio refused to transmit (check TX inhibit and the band edges)."));
         emit transmitChanged(false);
@@ -1187,6 +1187,14 @@ void Radio::setTransmit(bool on)
     m_link.send(on ? "TX0;" : "RX;", "TX");
 }
 
+void Radio::setDataTransmit(bool on)
+{
+    if (m_state != State::Connected && on)
+        return;
+    m_keyed = on;
+    m_link.send(on ? "TX1;" : "RX;", "TX");
+}
+
 void Radio::setTuneCarrier(bool on)
 {
     if (m_state != State::Connected && on)
@@ -1199,6 +1207,15 @@ void Radio::setMode(Mode mode)
 {
     m_link.send(cmd::mode(mode), "MD");
     m_link.query("MD;");
+}
+
+void Radio::setMode(Mode mode, bool data)
+{
+    m_link.send(cmd::mode(mode), "MD");
+    if (modeSupportsData(mode))
+        m_link.send(cmd::dataMode(data), "DA");
+    m_link.query("MD;");
+    m_link.query("DA;");
 }
 
 void Radio::setDataMode(bool on)

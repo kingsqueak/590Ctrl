@@ -31,6 +31,9 @@
 #include <QLineEdit>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QNetworkInterface>
+#include <QMediaDevices>
+#include <QPermissions>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QRadioButton>
@@ -139,7 +142,9 @@ MainWindow::MainWindow(QWidget *parent)
 
     auto *monitorDock = new QDockWidget(tr("CAT Monitor"));
     monitorDock->setObjectName(QStringLiteral("catMonitor"));
-    monitorDock->setWidget(new CatMonitor(m_radio.link()));
+    auto *monitor = new CatMonitor(m_radio.link());
+    monitor->addTciServer(&m_tci);
+    monitorDock->setWidget(monitor);
     addDockWidget(Qt::BottomDockWidgetArea, monitorDock);
     monitorDock->hide();
     QMenu *viewMenu = menuBar()->addMenu(tr("&View"));
@@ -174,6 +179,9 @@ MainWindow::MainWindow(QWidget *parent)
         });
     }
 
+    QMenu *toolsMenu = menuBar()->addMenu(tr("&Tools"));
+    toolsMenu->addAction(tr("TCI Server…"), this, &MainWindow::editTciServer);
+
     // On macOS the About roles move these into the application menu.
     QMenu *helpMenu = menuBar()->addMenu(tr("&Help"));
     QAction *aboutAction = helpMenu->addAction(tr("About 590Ctrl"), this, &MainWindow::showAbout);
@@ -183,6 +191,11 @@ MainWindow::MainWindow(QWidget *parent)
 
     m_radioInfo = new QLabel;
     statusBar()->addPermanentWidget(m_radioInfo);
+    m_tciStatus = new QLabel;
+    statusBar()->addPermanentWidget(m_tciStatus);
+    connect(&m_tci, &TciServer::clientsChanged, this, &MainWindow::refreshTciStatus);
+    connect(&m_tci, &TciServer::audioError, this, &MainWindow::showMessage);
+    startTciServer();
 
     // ---- radio -> UI
     connect(&m_radio, &Radio::stateChanged, this, &MainWindow::onStateChanged);
@@ -380,6 +393,7 @@ MainWindow::MainWindow(QWidget *parent)
 
 void MainWindow::closeEvent(QCloseEvent *event)
 {
+    m_tci.close();   // releases transmit if a TCI client keyed it
     m_radio.disconnectFromRadio();
     QSettings settings;
     settings.setValue(QStringLiteral("window/geometry"), saveGeometry());
@@ -1832,6 +1846,156 @@ void MainWindow::refreshAgc()
 }
 
 // ---------------------------------------------------------------------- QRZ
+
+// ---------------------------------------------------------------------- TCI
+
+void MainWindow::startTciServer()
+{
+    m_tci.close();
+    QSettings settings;
+    const bool enabled = settings.value(QStringLiteral("tci/enabled"), false).toBool();
+    m_tci.setAudio(nullptr);
+    if (enabled && settings.value(QStringLiteral("tci/audio"), true).toBool()) {
+        // Receive audio comes in through what macOS treats as a microphone.
+        const QMicrophonePermission microphone;
+        switch (qApp->checkPermission(microphone)) {
+        case Qt::PermissionStatus::Undetermined:
+            qApp->requestPermission(microphone, this, [this](const QPermission &) { startTciServer(); });
+            return;
+        case Qt::PermissionStatus::Denied:
+            showMessage(tr("TCI audio is off: allow 590Ctrl in System Settings → Privacy & Security → Microphone."));
+            break;
+        case Qt::PermissionStatus::Granted:
+            m_radioAudio.setDevices(
+                RadioAudio::findInput(settings.value(QStringLiteral("tci/audioInput")).toByteArray()),
+                RadioAudio::findOutput(settings.value(QStringLiteral("tci/audioOutput")).toByteArray()));
+            m_tci.setAudio(&m_radioAudio);
+            break;
+        }
+    }
+    if (enabled) {
+        const auto port = quint16(settings.value(QStringLiteral("tci/port"), tci::kDefaultPort).toUInt());
+        const QHostAddress address(tciAddress(settings));
+        if (!m_tci.listen(port, address))
+            showMessage(tr("TCI server can't use %1 port %2: %3").arg(address.toString()).arg(port)
+                            .arg(m_tci.errorString()));
+    }
+    refreshTciStatus();
+}
+
+// The address to listen on. Before there was a choice, a checkbox picked
+// between this computer only and every interface.
+QString MainWindow::tciAddress(const QSettings &settings)
+{
+    const QString address = settings.value(QStringLiteral("tci/address")).toString();
+    if (!address.isEmpty())
+        return address;
+    return settings.value(QStringLiteral("tci/allowRemote"), false).toBool() ? QStringLiteral("0.0.0.0")
+                                                                              : QStringLiteral("127.0.0.1");
+}
+
+void MainWindow::refreshTciStatus()
+{
+    m_tciStatus->setVisible(m_tci.isListening());
+    const int clients = m_tci.clientCount();
+    m_tciStatus->setText(tr("TCI %1:%2 · %3")
+                             .arg(m_tci.address().toString())
+                             .arg(m_tci.port())
+                             .arg(clients == 1 ? tr("1 client") : tr("%1 clients").arg(clients)));
+}
+
+void MainWindow::editTciServer()
+{
+    QSettings settings;
+    QDialog dialog(this);
+    dialog.setWindowTitle(tr("TCI Server"));
+    auto *enabled = new QCheckBox(tr("Let TCI programs control the radio"));
+    enabled->setChecked(settings.value(QStringLiteral("tci/enabled"), false).toBool());
+    auto *port = new QSpinBox;
+    port->setRange(1024, 65535);
+    port->setValue(settings.value(QStringLiteral("tci/port"), tci::kDefaultPort).toInt());
+    // Editable: pick a common choice or one of this computer's addresses, or
+    // type one. Only the part before the first space is the address.
+    auto *address = new QComboBox;
+    address->setEditable(true);
+    address->addItem(tr("127.0.0.1 (this computer only)"));
+    address->addItem(tr("0.0.0.0 (all network interfaces)"));
+    for (const QNetworkInterface &interface : QNetworkInterface::allInterfaces()) {
+        if (!(interface.flags() & QNetworkInterface::IsUp) || (interface.flags() & QNetworkInterface::IsLoopBack))
+            continue;
+        for (const QNetworkAddressEntry &entry : interface.addressEntries()) {
+            const QHostAddress ip = entry.ip();
+            if (ip.protocol() == QAbstractSocket::IPv4Protocol)
+                address->addItem(QStringLiteral("%1 (%2)").arg(ip.toString(), interface.humanReadableName()));
+        }
+    }
+    address->setCurrentText(tciAddress(settings));
+    address->setToolTip(tr("TCI has no password: anyone who can reach this address and port can tune and key "
+                           "the radio. Use 127.0.0.1 unless the TCI program runs on another computer."));
+    const auto addressText = [address] { return address->currentText().section(QLatin1Char(' '), 0, 0).trimmed(); };
+    auto *audio = new QCheckBox(tr("Share the radio's USB audio (48 kHz)"));
+    audio->setChecked(settings.value(QStringLiteral("tci/audio"), true).toBool());
+    audio->setToolTip(tr("Receive audio goes to TCI programs and their transmit audio to the radio, so they "
+                         "don't need a sound card of their own."));
+    // First entry: find the radio's codec by name, wherever it's plugged in.
+    auto deviceCombo = [&](const QList<QAudioDevice> &devices, const QString &key) {
+        auto *combo = new QComboBox;
+        combo->addItem(tr("USB Audio CODEC (the radio)"), QByteArray());
+        for (const QAudioDevice &device : devices)
+            combo->addItem(device.description(), device.id());
+        const int index = combo->findData(settings.value(key).toByteArray());
+        combo->setCurrentIndex(std::max(index, 0));
+        return combo;
+    };
+    auto *input = deviceCombo(QMediaDevices::audioInputs(), QStringLiteral("tci/audioInput"));
+    auto *output = deviceCombo(QMediaDevices::audioOutputs(), QStringLiteral("tci/audioOutput"));
+    input->setEnabled(audio->isChecked());
+    output->setEnabled(audio->isChecked());
+    connect(audio, &QCheckBox::toggled, input, &QWidget::setEnabled);
+    connect(audio, &QCheckBox::toggled, output, &QWidget::setEnabled);
+    auto *note = new QLabel(tr("Programs such as fldigi connect to ws://address:port (with 0.0.0.0, any of this "
+                               "computer's addresses). Tuning, mode, "
+                               "PTT (DATA SEND), tune, power, split, RIT/XIT, filter and CW are shared. For "
+                               "transmit audio over USB, set the radio's DATA SEND input to USB."));
+    note->setWordWrap(true);
+    note->setForegroundRole(QPalette::PlaceholderText);
+
+    auto *form = new QFormLayout;
+    alignForm(form);
+    form->addRow(QString(), enabled);
+    form->addRow(tr("Address"), address);
+    form->addRow(tr("Port"), port);
+    form->addRow(QString(), audio);
+    form->addRow(tr("Receive audio from"), input);
+    form->addRow(tr("Transmit audio to"), output);
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, [&] {
+        if (QHostAddress(addressText()).isNull()) {
+            QMessageBox::warning(&dialog, tr("TCI Server"),
+                                 tr("“%1” isn't an IP address. Use 127.0.0.1, 0.0.0.0 or one of this "
+                                    "computer's addresses.").arg(addressText()));
+            return;
+        }
+        dialog.accept();
+    });
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    auto *layout = new QVBoxLayout(&dialog);
+    layout->addLayout(form);
+    layout->addWidget(note);
+    layout->addWidget(buttons);
+    dialog.resize(420, dialog.sizeHint().height());
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
+    settings.setValue(QStringLiteral("tci/enabled"), enabled->isChecked());
+    settings.setValue(QStringLiteral("tci/port"), port->value());
+    settings.setValue(QStringLiteral("tci/address"), QHostAddress(addressText()).toString());
+    settings.remove(QStringLiteral("tci/allowRemote"));
+    settings.setValue(QStringLiteral("tci/audio"), audio->isChecked());
+    settings.setValue(QStringLiteral("tci/audioInput"), input->currentData().toByteArray());
+    settings.setValue(QStringLiteral("tci/audioOutput"), output->currentData().toByteArray());
+    startTciServer();
+}
 
 void MainWindow::loadQrzAccount()
 {

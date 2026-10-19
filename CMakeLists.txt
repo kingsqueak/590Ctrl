@@ -7,7 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include(CTest)
 
-set(QT_COMPONENTS Core Widgets SerialPort Network)
+set(QT_COMPONENTS Core Widgets SerialPort Network WebSockets Multimedia)
 if(BUILD_TESTING)
     list(APPEND QT_COMPONENTS Test)
 endif()
@@ -26,9 +26,12 @@ qt_add_library(ts590core STATIC
     src/core/EqPresetLibrary.h src/core/EqPresetLibrary.cpp
     src/core/EqAutoLoader.h src/core/EqAutoLoader.cpp
     src/core/Qrz.h src/core/Qrz.cpp
+    src/core/TciServer.h src/core/TciServer.cpp
+    src/core/Resampler.h src/core/Resampler.cpp
+    src/core/RadioAudio.h src/core/RadioAudio.cpp
 )
 target_include_directories(ts590core PUBLIC src/core)
-target_link_libraries(ts590core PUBLIC Qt6::Core Qt6::SerialPort Qt6::Network)
+target_link_libraries(ts590core PUBLIC Qt6::Core Qt6::SerialPort Qt6::Network Qt6::WebSockets Qt6::Multimedia)
 
 qt_add_executable(590Ctrl
     src/app/main.cpp
@@ -45,12 +48,14 @@ qt_add_executable(590Ctrl
 # Dock/Finder icon on macOS; the PNG is the window icon elsewhere.
 set_source_files_properties(resources/590Ctrl.icns PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
 qt_add_resources(590Ctrl "icon" PREFIX "/" FILES resources/590Ctrl.png)
-target_link_libraries(590Ctrl PRIVATE ts590core Qt6::Widgets)
+target_link_libraries(590Ctrl PRIVATE ts590core Qt6::Widgets Qt6::Multimedia)
 target_compile_definitions(590Ctrl PRIVATE PROJECT_VERSION="${PROJECT_VERSION}")
 set_target_properties(590Ctrl PROPERTIES
     MACOSX_BUNDLE ON
     MACOSX_BUNDLE_BUNDLE_NAME 590Ctrl
     MACOSX_BUNDLE_ICON_FILE 590Ctrl.icns
+    # Qt's template plus the microphone prompt text the TCI audio needs.
+    MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/resources/Info.plist.in
     MACOSX_BUNDLE_GUI_IDENTIFIER com.radiopathology.590ctrl
     MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION}
     MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
@@ -58,7 +63,7 @@ set_target_properties(590Ctrl PROPERTIES
 )
 
 if(BUILD_TESTING)
-    foreach(test tst_catcodec tst_catlink tst_radio tst_eqpresets tst_qrz)
+    foreach(test tst_catcodec tst_catlink tst_radio tst_eqpresets tst_qrz tst_tciserver tst_resampler)
         qt_add_executable(${test} tests/${test}.cpp)
         target_link_libraries(${test} PRIVATE ts590core Qt6::Test)
         add_test(NAME ${test} COMMAND ${test})

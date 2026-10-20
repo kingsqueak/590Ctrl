@@ -77,9 +77,9 @@ private:
 private slots:
     void modulationNames()
     {
-        QCOMPARE(tci::modulationName(Mode::USB, true), QByteArray("DIGU"));
-        QCOMPARE(tci::modulationName(Mode::LSB, false), QByteArray("LSB"));
-        QCOMPARE(tci::modulationName(Mode::FM, false), QByteArray("NFM"));
+        QCOMPARE(tci::modulationName(Mode::USB, true), QByteArray("digu"));
+        QCOMPARE(tci::modulationName(Mode::LSB, false), QByteArray("lsb"));
+        QCOMPARE(tci::modulationName(Mode::FM, false), QByteArray("nfm"));
         QCOMPARE(tci::modulationFromName("digl"), std::optional(std::pair{Mode::LSB, true}));
         QCOMPARE(tci::modulationFromName("CWL"), std::optional(std::pair{Mode::CWR, false}));
         QVERIFY(!tci::modulationFromName("WFM"));
@@ -199,6 +199,30 @@ private slots:
         QTRY_COMPARE(server.clientCount(), 0);
     }
 
+    void keysDataSendWithoutSourceWhenStreamingAudio()
+    {
+        Radio radio;
+        SimulatorTransport *sim = connectSim(radio);
+        TciServer server(&radio);
+        QVERIFY(server.listen(0));
+        Client client(server.port());
+        QVERIFY(client.waitReady());
+
+        // No audio stream: the mic.
+        client.send(QStringLiteral("trx:0,true;"));
+        QTRY_VERIFY(radio.transmitting());
+        QVERIFY(sim->received().contains("TX0"));
+        client.send(QStringLiteral("trx:0,false;"));
+        QTRY_VERIFY(!radio.transmitting());
+
+        // Streaming, as WSJT-X does: DATA SEND.
+        client.send(QStringLiteral("audio_start:0;trx:0,true;"));
+        QTRY_VERIFY(radio.transmitting());
+        QVERIFY(sim->received().contains("TX1"));
+        client.send(QStringLiteral("trx:0,false;"));
+        QTRY_VERIFY(!radio.transmitting());
+    }
+
     void tuneUsesTuneCarrier()
     {
         Radio radio;
@@ -295,6 +319,7 @@ private slots:
         client.send(QStringLiteral("audio_samplerate:24000;audio_stream_sample_type:int16;"
                                    "audio_stream_channels:1;audio_stream_samples:512;audio_start:0;"));
         QVERIFY(client.waitFor(QStringLiteral("audio_stream_samples:512")));
+        QVERIFY(client.waitFor(QStringLiteral("audio_start:0")));
         QTRY_COMPARE(errors.count(), 1);   // reported once
 
         // 2048 codec frames at 48 kHz -> 1024 at 24 kHz -> two 512 packets.
@@ -313,7 +338,7 @@ private slots:
         QCOMPARE(qFromLittleEndian<qint16>(block.constData() + block.size() - 2), qint16(8192));
 
         client.send(QStringLiteral("audio_stop:0;"));
-        QTest::qWait(100);
+        QVERIFY(client.waitFor(QStringLiteral("audio_stop:0")));
         emit audio.captured(frames);
         QTest::qWait(100);
         QCOMPARE(client.binary.size(), 2);

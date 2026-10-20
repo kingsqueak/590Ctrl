@@ -136,17 +136,19 @@ int nearestIndex(const QList<int> &values, int hz)
 
 namespace tci {
 
+// Lower case, as ExpertSDR3 sends them. WSJT-X compares modes case-sensitively
+// and drops the connection with "TCI failed set mode" if it gets "DIGU".
 QByteArray modulationName(Mode mode, bool data)
 {
     switch (mode) {
-    case Mode::LSB: return data ? "DIGL" : "LSB";
-    case Mode::USB: return data ? "DIGU" : "USB";
-    case Mode::CW: return "CW";
-    case Mode::CWR: return "CWR";
-    case Mode::FM: return "NFM";
-    case Mode::AM: return "AM";
-    case Mode::FSK: return "FSK";
-    case Mode::FSKR: return "FSKR";
+    case Mode::LSB: return data ? "digl" : "lsb";
+    case Mode::USB: return data ? "digu" : "usb";
+    case Mode::CW: return "cw";
+    case Mode::CWR: return "cwr";
+    case Mode::FM: return "nfm";
+    case Mode::AM: return "am";
+    case Mode::FSK: return "fsk";
+    case Mode::FSKR: return "fskr";
     case Mode::None: break;
     }
     return {};
@@ -310,8 +312,8 @@ void TciServer::onNewConnection()
         sendTo(socket, command("CHANNELS_COUNT", {"2"}));
         sendTo(socket, command("VFO_LIMITS", {num(kMinFrequencyHz), num(kMaxFrequencyHz)}));
         sendTo(socket, command("IF_LIMITS", {num(-kIfLimitHz), num(kIfLimitHz)}));
-        sendTo(socket, command("MODULATIONS_LIST", {"LSB", "USB", "DIGL", "DIGU", "CW", "CWR", "AM", "NFM",
-                                                    "FSK", "FSKR"}));
+        sendTo(socket, command("MODULATIONS_LIST", {"lsb", "usb", "digl", "digu", "cw", "cwr", "am", "nfm",
+                                                    "fsk", "fskr"}));
         const Client &client = m_clients[socket];
         sendTo(socket, command("AUDIO_SAMPLERATE", {num(client.sampleRate)}));
         sendTo(socket, command("AUDIO_STREAM_SAMPLE_TYPE", {client.sampleType}));
@@ -417,8 +419,11 @@ void TciServer::handleCommand(QWebSocket *socket, Client &client, const QByteArr
         if (on && connected) {
             if (*on) {
                 // "tci" asks for the computer's audio: DATA SEND, which takes
-                // the USB (or ACC2) input. Anything else is the mic.
-                if (args.value(2).toLower() == "tci") {
+                // the USB (or ACC2) input. Anything else is the mic. With no
+                // source, a client streaming TCI audio gets TCI too: WSJT-X
+                // only adds "tci" when talking to ExpertSDR3.
+                const QByteArray source = args.value(2).toLower();
+                if (source == "tci" || (source.isEmpty() && client.audio)) {
                     m_radio->setDataTransmit(true);
                     startTxStream(socket);
                 } else {
@@ -534,12 +539,16 @@ void TciServer::handleCommand(QWebSocket *socket, Client &client, const QByteArr
             client.audio = name == "audio_start";
             client.rxPending.clear();
             updateAudio();
+            // ExpertSDR3 confirms; WSJT-X gives up with "TCI Audio could
+            // not be switched on" if no confirmation comes within 500 ms.
+            sendTo(socket, command(name, {"0"}));
         }
     } else if (name == "line_out_start" || name == "line_out_stop") {
         if (trx0) {
             client.lineOut = name == "line_out_start";
             client.linePending.clear();
             updateAudio();
+            sendTo(socket, command(name, {"0"}));
         }
     } else if (name == "tx_stream_audio_buffering") {
         if (const int ms = args.value(0).toInt(); ms > 0)
@@ -567,8 +576,8 @@ void TciServer::handleCommand(QWebSocket *socket, Client &client, const QByteArr
     } else if (name == "modulations_list" || name == "device" || name == "protocol") {
         // Some clients ask again for these; the answers are in the greeting.
         if (name == "modulations_list")
-            sendTo(socket, command("MODULATIONS_LIST", {"LSB", "USB", "DIGL", "DIGU", "CW", "CWR", "AM", "NFM",
-                                                        "FSK", "FSKR"}));
+            sendTo(socket, command("MODULATIONS_LIST", {"lsb", "usb", "digl", "digu", "cw", "cwr", "am", "nfm",
+                                                        "fsk", "fskr"}));
         else if (name == "device")
             sendTo(socket, command("DEVICE", {m_radio->modelId() == kModelTs590S ? "TS-590S" : "TS-590SG"}));
         else

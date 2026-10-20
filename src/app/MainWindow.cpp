@@ -61,6 +61,7 @@ constexpr int kMessageTimeoutMs = 8000;
 const QList<qint32> kBaudRates = {9600, 19200, 38400, 57600, 115200};
 
 constexpr int kVfoAPointSize = 36;
+constexpr int kCwTextPointSize = 14;   // keyboard CW entry and decoded text
 constexpr int kRitXitStepHz = 10;
 constexpr int kOffsetHoldMs = 500;
 
@@ -1219,6 +1220,11 @@ QWidget *MainWindow::createCwPage()
     // Keyboard CW: Enter (or SEND) queues the line; the radio keys it at the
     // keyer speed, transmitting if break-in is on.
     m_cwEdit = new QLineEdit;
+    // Same face and size as the decoded text below.
+    QFont cwFont = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+    cwFont.setPointSize(kCwTextPointSize);
+    m_cwEdit->setFont(cwFont);
+    m_cwEdit->setTextMargins(4, 3, 4, 3);
     m_cwEdit->setPlaceholderText(tr("Type text and press Enter to send it"));
     m_cwEdit->setToolTip(tr("Letters, digits and . , / ? = : ' \" ( ) * + - @. "
                             "Prosigns: [ BT, ] KN, < AS, > SK, _ AR, \\ BK, # HH, % SN."));
@@ -1264,7 +1270,9 @@ QWidget *MainWindow::createCwPage()
     connect(m_decoderSlider, &QSlider::valueChanged, thresholdValue, qOverload<int>(&QLabel::setNum));
     m_decoderText = new QPlainTextEdit;
     m_decoderText->setReadOnly(true);
-    m_decoderText->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
+    QFont decoderFont = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+    decoderFont.setPointSize(kCwTextPointSize);
+    m_decoderText->setFont(decoderFont);
     m_decoderText->setMaximumBlockCount(500);
     m_decoderText->setPlaceholderText(tr("Decoded text appears here"));
     auto *clearButton = new QPushButton(tr("Clear"));

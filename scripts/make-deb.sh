@@ -13,7 +13,8 @@ ARCH=$(dpkg --print-architecture)
 
 cmake -S . -B build-deb -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build-deb
-ctest --test-dir build-deb --output-on-failure
+# The runner has no display. offscreen is enough for the unit tests.
+QT_QPA_PLATFORM=offscreen ctest --test-dir build-deb --output-on-failure
 
 STAGE=$(mktemp -d)
 trap 'rm -rf "$STAGE"' EXIT

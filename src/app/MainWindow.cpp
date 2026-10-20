@@ -140,6 +140,13 @@ MainWindow::MainWindow(QWidget *parent)
     layout->addWidget(tabs, 1);
     setCentralWidget(central);
 
+    // The macOS style's slider minimum is just the knob, so a narrow window
+    // squeezed the sliders to nothing. Keep every slider usable.
+    for (QSlider *slider : central->findChildren<QSlider *>()) {
+        if (slider->orientation() == Qt::Horizontal)
+            slider->setMinimumWidth(120);
+    }
+
     auto *monitorDock = new QDockWidget(tr("CAT Monitor"));
     monitorDock->setObjectName(QStringLiteral("catMonitor"));
     auto *monitor = new CatMonitor(m_radio.link());

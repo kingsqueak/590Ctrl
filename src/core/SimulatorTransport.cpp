@@ -93,6 +93,15 @@ void SimulatorTransport::write(const QByteArray &data)
     }
 }
 
+void SimulatorTransport::simulatePanelPowerOff()
+{
+    m_powered = false;
+    m_transmitting = false;
+    m_mute = false;
+    m_autoInfo = 0;
+    reply("PS0");
+}
+
 void SimulatorTransport::simulateTransmit(bool on, int swr, int comp, int alc)
 {
     m_transmitting = on;
@@ -272,6 +281,7 @@ void SimulatorTransport::handle(const QByteArray &command)
         m_powered = args == "1";
         if (!m_powered) {
             m_transmitting = false;
+            m_mute = false;   // MU is not kept across power-off
             m_autoInfo = 0;   // AI2 is not kept across power-off
         }
         return;

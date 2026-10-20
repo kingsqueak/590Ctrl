@@ -68,6 +68,8 @@ public:
     int noiseReduction() const { return m_noiseReduction; }
     int nrLevel(int reduction) const { return m_nrLevels[reduction]; }
     void setUnresponsive(bool on) { m_unresponsive = on; }
+    // Front-panel power-off: PS0, MU forgotten, menu values kept.
+    void simulatePanelPowerOff();
     // PS0 state: answers PS only.
     void setPowered(bool on) { m_powered = on; }
     // Switched off at the front panel: silent until the wake-up sequence
@@ -76,6 +78,7 @@ public:
     bool powered() const { return m_powered; }
     bool transmitting() const { return m_transmitting; }
     bool vox() const { return m_vox; }
+    bool muted() const { return m_mute; }
     int voxGain() const { return m_voxGain; }
     QByteArray antenna() const { return m_antenna; }
     bool attenuator() const { return m_attenuator; }

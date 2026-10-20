@@ -106,6 +106,12 @@ void Radio::setPower(bool on)
         if (m_keyed || m_transmitting)
             m_link.send("RX;");
         m_keyed = false;
+        // MU is forgotten across power-off; the USB menu is not. Put both back
+        // before PS0. The saved level is kept in case this write never lands.
+        if (m_mute)
+            m_link.send(cmd::mute(false), "MU");
+        restoreHeldUsb(/*honorUserEdit=*/true, /*clearHold=*/false);
+        m_reapplyMuteUsb = false;
         m_link.send("PS0;");
         enterPoweredOff();
     }
@@ -116,7 +122,9 @@ void Radio::enterPoweredOff()
     m_meterTimer.stop();
     m_bootTimer.stop();
     m_awaitingIdentity = false;
+    const bool restoreUsb = m_usbOutBeforeMute.has_value();
     resetRadioState();
+    m_restoreHeldUsb = restoreUsb;
     setState(State::PoweredOff);
 }
 
@@ -154,12 +162,28 @@ void Radio::disconnectFromRadio()
         // Bypass the queue. Never leave the radio transmitting.
         if (m_keyed || m_transmitting)
             transport->write("RX;");
-        // The radio keeps the USB output level; don't leave it muted at 0.
-        if (m_usbOutBeforeMute) {
+        // MU isn't saved on the radio. The USB level is, so put that back into
+        // the menu set MUTE took it from, unless the user changed it there.
+        if (m_mute)
             transport->write(cmd::mute(false));
-            transport->write(cmd::setMenu(menuNumbersFor(m_modelId).usbAudioOut,
-                                          QByteArray::number(*m_usbOutBeforeMute)));
+        if (m_usbOutBeforeMute) {
+            const MenuBank bank = m_usbOutBeforeMute->first;
+            const int level = m_usbOutBeforeMute->second;
+            const int menu = menuNumbersFor(m_modelId).usbAudioOut;
+            const bool userKept = m_menuBank && *m_menuBank == bank
+                                   && m_usbAudioOut.value_or(0) != 0;
+            const bool other = m_menuBank && bank != *m_menuBank;
+            if (!userKept && menu >= 0 && level > 0) {
+                if (other)
+                    transport->write(cmd::menuBank(bank));
+                transport->write(cmd::setMenu(menu, QByteArray::number(level)));
+                if (other)
+                    transport->write(cmd::menuBank(*m_menuBank));
+            }
         }
+        m_usbOutBeforeMute.reset();
+        m_reapplyMuteUsb = false;
+        m_restoreHeldUsb = false;
         // Put AI back the way we found it.
         if (m_originalAutoInfo)
             transport->write(cmd::autoInfo(*m_originalAutoInfo));
@@ -188,7 +212,10 @@ void Radio::resetRadioState()
     m_voxGain.reset();
     m_voxDelay.reset();
     m_lock = m_mute = m_fineTuning = false;
-    m_usbOutBeforeMute.reset();
+    // m_usbOutBeforeMute survives: a panel power-off can't be written to, and
+    // the USB menu comes back at 0. MU itself does not.
+    m_reapplyMuteUsb = false;
+    m_heldUsbRead = false;
     m_antenna = 1;
     m_rxAntenna = m_driveOut = m_attenuator = m_preamp = false;
     m_rxTuner = m_txTuner = m_tunerTuning = false;
@@ -681,6 +708,14 @@ void Radio::handleFrame(const QByteArray &frame)
                 m_menuBank = bank;
                 emit menuBankChanged(*bank);
             }
+            // The held level may belong to the other set. Read that one once.
+            if (m_usbOutBeforeMute && !m_mute && !m_heldUsbRead
+                && *bank != m_usbOutBeforeMute->first) {
+                m_heldUsbRead = true;
+                const int menu = menuNumbersFor(m_modelId).usbAudioOut;
+                if (menu >= 0)
+                    inMenuBank(m_usbOutBeforeMute->first, [&] { m_link.query(cmd::readMenu(menu)); });
+            }
         }
     } else if (name == "EX") {
         const auto menu = parseMenu(frame);
@@ -690,9 +725,13 @@ void Radio::handleFrame(const QByteArray &frame)
         emit menuItemRead(bank, menu->number, menu->value);
         // The cached settings follow the set in use, not one read in passing.
         const auto value = parseNumber(menu->value);
-        if (!value || (m_menuBank && bank != *m_menuBank))
+        if (!value)
             return;
         const MenuNumbers menus = menuNumbersFor(m_modelId);
+        if (menu->number == menus.usbAudioOut && noteUsbOutRead(bank, int(*value)))
+            return;
+        if (m_menuBank && bank != *m_menuBank)
+            return;
         if (menu->number == menus.usbAudioIn || menu->number == menus.usbAudioOut) {
             const bool in = menu->number == menus.usbAudioIn;
             std::optional<int> &field = in ? m_usbAudioIn : m_usbAudioOut;
@@ -843,8 +882,9 @@ void Radio::handleTimeout(const QByteArray &command)
         m_cwTimer.start();
         return;
     }
-    // Meter and busy polls: the next poll will do.
-    if (command != "SM0;" && command != "RM;" && command != "BY;")
+    // Meter, squelch and the front-panel key polls: the next poll will do.
+    if (command != "SM0;" && command != "RM;" && command != "BY;" && command != "VX;" && command != "LK;"
+        && command != "FS;")
         emit message(tr("Radio did not answer %1").arg(QString::fromLatin1(command)));
 }
 
@@ -935,10 +975,17 @@ void Radio::selectMenuBank(MenuBank bank)
 {
     if (m_menuBank == bank)
         return;
+    // Restore the set we're leaving, then mute the one we're entering.
+    if (m_mute)
+        restoreHeldUsb(/*honorUserEdit=*/true, /*clearHold=*/true);
+    else
+        m_reapplyMuteUsb = false;
     m_link.send(cmd::menuBank(bank));
     m_link.query("MF;");
     m_menuBank = bank;
     emit menuBankChanged(bank);
+    if (m_mute)
+        m_reapplyMuteUsb = true;
     // Every menu setting just changed with it.
     requestTrackedMenus();
 }
@@ -1265,16 +1312,82 @@ void Radio::setLock(bool on)
     m_link.query("LK;");
 }
 
+void Radio::restoreHeldUsb(bool honorUserEdit, bool clearHold)
+{
+    if (!m_usbOutBeforeMute)
+        return;
+    const MenuBank bank = m_usbOutBeforeMute->first;
+    const int level = m_usbOutBeforeMute->second;
+    const bool same = m_menuBank && *m_menuBank == bank;
+    // A level edited while muted counts only for the set the edit landed in.
+    const bool userKept = honorUserEdit && same && m_usbAudioOut.value_or(0) != 0;
+    if (clearHold)
+        m_usbOutBeforeMute.reset();
+    if (userKept || level <= 0)
+        return;
+    const int menu = menuNumbersFor(m_modelId).usbAudioOut;
+    if (menu < 0)
+        return;
+    if (!m_menuBank || same) {
+        setUsbAudioOut(level);
+        return;
+    }
+    inMenuBank(bank, [&] {
+        const QByteArray read = cmd::readMenu(menu);
+        m_link.send(cmd::setMenu(menu, QByteArray::number(level)), read.chopped(1));
+        m_link.query(read);
+    });
+}
+
+bool Radio::noteUsbOutRead(MenuBank bank, int level)
+{
+    // Menu-set change while MUTE is on: this read is the new set's real level.
+    if (m_reapplyMuteUsb && m_mute && m_menuBank && bank == *m_menuBank) {
+        m_reapplyMuteUsb = false;
+        if (level > 0) {
+            m_usbOutBeforeMute = std::pair{bank, level};
+            setUsbAudioOut(0);
+            return true;
+        }
+        return false;
+    }
+    if (!m_usbOutBeforeMute || m_mute || bank != m_usbOutBeforeMute->first)
+        return false;
+    if (level != 0) {
+        m_usbOutBeforeMute.reset();   // already back, or the user changed it
+        m_restoreHeldUsb = false;
+        return false;
+    }
+    // A 0 read while muting is the level we just wrote. Only a power-off asks
+    // for the saved level to be put back.
+    if (!m_restoreHeldUsb || m_state != State::Connected || m_usbOutBeforeMute->second <= 0)
+        return false;
+    const int saved = m_usbOutBeforeMute->second;
+    const int menu = menuNumbersFor(m_modelId).usbAudioOut;
+    m_usbOutBeforeMute.reset();
+    m_restoreHeldUsb = false;
+    if (menu < 0)
+        return false;
+    if (!m_menuBank || *m_menuBank == bank) {
+        setUsbAudioOut(saved);
+        return true;
+    }
+    inMenuBank(bank, [&] {
+        const QByteArray read = cmd::readMenu(menu);
+        m_link.send(cmd::setMenu(menu, QByteArray::number(saved)), read.chopped(1));
+        m_link.query(read);
+    });
+    return true;
+}
+
 void Radio::setMute(bool on)
 {
     if (on && !m_usbOutBeforeMute && m_usbAudioOut.value_or(0) > 0) {
-        m_usbOutBeforeMute = m_usbAudioOut;
+        m_usbOutBeforeMute = std::pair{m_menuBank.value_or(MenuBank::A), *m_usbAudioOut};
         setUsbAudioOut(0);
-    } else if (!on && m_usbOutBeforeMute) {
-        // A level changed while muted is the one to keep.
-        if (m_usbAudioOut.value_or(0) == 0)
-            setUsbAudioOut(*m_usbOutBeforeMute);
-        m_usbOutBeforeMute.reset();
+    } else if (!on) {
+        m_reapplyMuteUsb = false;
+        restoreHeldUsb(/*honorUserEdit=*/true, /*clearHold=*/true);
     }
     m_link.send(cmd::mute(on), "MU");
     m_link.query("MU;");

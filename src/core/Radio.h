@@ -8,6 +8,7 @@
 
 #include <memory>
 #include <optional>
+#include <utility>
 
 namespace ts590 {
 
@@ -150,7 +151,8 @@ public:
     void setLock(bool on);
     // MU mutes only the received audio, so muting also takes the USB audio
     // output (to the computer and TCI clients) to 0, and unmuting puts the
-    // previous level back unless it was changed in the meantime.
+    // previous level back unless it was changed in the meantime. The saved
+    // level is put back into the menu set it came from.
     void setMute(bool on);
     void setFineTuning(bool on);
     void setAntenna(int number);
@@ -282,6 +284,12 @@ private:
     void requestFilterValues();
     void applyMode(Mode mode, std::optional<bool> data);
     void setMenuValue(int menu, std::optional<int> &field, int value, int maximum, int width = 1);
+    // Puts a MUTE-saved USB level back. A level edited while muted, on that
+    // same menu set, is kept. `clearHold` is false across power-off, where the
+    // radio may still be at 0 when it next comes up.
+    void restoreHeldUsb(bool honorUserEdit, bool clearHold);
+    // An EX read of the USB output. True means the live cache must ignore it.
+    bool noteUsbOutRead(MenuBank bank, int level);
     void requestVfoState();
     void setPower(QByteArray (*encode)(int), std::optional<int> &field, int watts, int maximum);
     void setLevel(QByteArray (*encode)(int), std::optional<int> &field, int level, int maximum);
@@ -333,7 +341,12 @@ private:
     bool m_lock = false;
     bool m_mute = false;
     bool m_fineTuning = false;
-    std::optional<int> m_usbOutBeforeMute;   // restored on unmute
+    // Menu set and USB output level from when MUTE turned the output down.
+    // Kept across power-off: the radio stores the level and forgets MU.
+    std::optional<std::pair<MenuBank, int>> m_usbOutBeforeMute;
+    bool m_reapplyMuteUsb = false;   // zero the new menu set's USB after a switch
+    bool m_heldUsbRead = false;      // already asked the other set for its USB level
+    bool m_restoreHeldUsb = false;   // power-off left the saved level to put back
     int m_antenna = 1;
     bool m_rxAntenna = false;
     bool m_driveOut = false;

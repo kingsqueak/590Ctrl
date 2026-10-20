@@ -672,6 +672,118 @@ private slots:
         QCOMPARE(sim->menu(usbOut), 3);
     }
 
+    void muteRestoresUsbAcrossMenuBankSwitch()
+    {
+        Radio radio;
+        SimulatorTransport *sim = connectSim(radio);
+        const int usbOut = menuNumbersFor(kModelTs590SG).usbAudioOut;
+        sim->setMenu(MenuBank::B, usbOut, 8);
+
+        radio.setMute(true);
+        settle(radio);
+        QCOMPARE(sim->menu(MenuBank::A, usbOut), 0);
+
+        radio.selectMenuBank(MenuBank::B);
+        settle(radio);
+        QCOMPARE(sim->menu(MenuBank::A, usbOut), 5);   // the set we left
+        QCOMPARE(sim->menu(MenuBank::B, usbOut), 0);   // mute follows the new set
+        QVERIFY(radio.muted());
+
+        radio.setMute(false);
+        settle(radio);
+        QCOMPARE(sim->menu(MenuBank::A, usbOut), 5);
+        QCOMPARE(sim->menu(MenuBank::B, usbOut), 8);
+        QCOMPARE(sim->menuBank(), MenuBank::B);
+        QVERIFY(!radio.muted());
+    }
+
+    void powerOffWhileMutedRestoresUsb()
+    {
+        Radio radio;
+        SimulatorTransport *sim = connectSim(radio);
+        const int usbOut = menuNumbersFor(kModelTs590SG).usbAudioOut;
+        radio.setMute(true);
+        settle(radio);
+        QCOMPARE(sim->menu(usbOut), 0);
+
+        radio.setPower(false);
+        QCOMPARE(radio.state(), Radio::State::PoweredOff);
+        QTRY_VERIFY(!sim->powered());
+        QTRY_COMPARE(sim->menu(usbOut), 5);
+        QVERIFY(!sim->muted());
+        const QByteArrayList sent = sim->received();
+        const int muteOff = sent.lastIndexOf(QByteArray("MU0"));
+        const int powerOff = sent.lastIndexOf(QByteArray("PS0"));
+        QVERIFY(muteOff >= 0 && powerOff > muteOff);
+    }
+
+    void panelPowerOffWhileMutedRestoresUsbOnConnect()
+    {
+        Radio radio;
+        SimulatorTransport *sim = connectSim(radio);
+        const int usbOut = menuNumbersFor(kModelTs590SG).usbAudioOut;
+        radio.setMute(true);
+        settle(radio);
+        QCOMPARE(sim->menu(usbOut), 0);
+
+        sim->simulatePanelPowerOff();
+        QTRY_COMPARE(radio.state(), Radio::State::PoweredOff);
+        QCOMPARE(sim->menu(usbOut), 0);   // nothing could be written
+
+        radio.setPower(true);
+        settle(radio);
+        QCOMPARE(sim->menu(usbOut), 5);
+        QVERIFY(!radio.muted());
+        QVERIFY(!sim->muted());
+    }
+
+    void disconnectWhileMutedRestoresUsb()
+    {
+        Radio radio;
+        SimulatorTransport *sim = connectSim(radio);
+        const int usbOut = menuNumbersFor(kModelTs590SG).usbAudioOut;
+        radio.setMute(true);
+        settle(radio);
+        QPointer<SimulatorTransport> guard(sim);
+        radio.disconnectFromRadio();
+        QVERIFY(guard);
+        QVERIFY(sim->received().contains(QByteArray("MU0")));
+        QVERIFY(sim->received().contains(QByteArray("EX07200005")));
+        QCOMPARE(sim->menu(usbOut), 5);
+        QVERIFY(!sim->muted());
+    }
+
+    void disconnectWhileMutedWithUsbAlreadyZero()
+    {
+        Radio radio;
+        SimulatorTransport *sim = connectSim(radio);
+        const int usbOut = menuNumbersFor(kModelTs590SG).usbAudioOut;
+        radio.setUsbAudioOut(0);
+        settle(radio);
+        radio.setMute(true);
+        settle(radio);
+        QCOMPARE(sim->menu(usbOut), 0);
+        QPointer<SimulatorTransport> guard(sim);
+        radio.disconnectFromRadio();
+        QVERIFY(guard);
+        QVERIFY(sim->received().contains(QByteArray("MU0")));
+        QCOMPARE(sim->menu(usbOut), 0);
+        QVERIFY(!sim->muted());
+    }
+
+    void panelKeyPollTimeoutIsQuiet()
+    {
+        Radio radio;
+        SimulatorTransport *sim = connectSim(radio);
+        radio.link()->setReplyTimeout(30);
+        sim->setUnresponsive(true);
+        radio.setMeterPolling(true);
+        QSignalSpy messages(&radio, &Radio::message);
+        QTRY_VERIFY(sim->received().contains(QByteArray("LK")));
+        for (const QList<QVariant> &args : messages)
+            QVERIFY(!args.value(0).toString().contains(QStringLiteral("did not answer")));
+    }
+
     void readsMenuBankAtConnect()
     {
         Radio radio;

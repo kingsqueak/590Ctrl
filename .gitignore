@@ -1,4 +1,6 @@
 build/
+build-deb/
+dist/
 .cache/
 compile_commands.json
 .DS_Store

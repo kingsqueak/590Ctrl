@@ -1576,6 +1576,7 @@ void MainWindow::onModeChanged(Mode mode, bool data)
     refreshAgc();
     refreshBeatCancel();
     refreshKeyer();
+    refreshDecoder();
 }
 
 void MainWindow::onVfoSelectionChanged(Vfo rx, Vfo tx)
@@ -1829,8 +1830,12 @@ void MainWindow::refreshKeyer()
 void MainWindow::refreshDecoder()
 {
     const bool connected = m_radio.state() == Radio::State::Connected;
-    const bool on = connected && m_radio.morseDecoder();
+    // The radio keeps the decoder setting outside CW but only decodes in CW,
+    // so show it off there.
+    const bool cw = connected && isCwMode(m_radio.mode());
+    const bool on = cw && m_radio.morseDecoder();
     m_decoderButton->setChecked(on);
+    m_decoderButton->setEnabled(cw);
     m_decoderSlider->setEnabled(on);
     if (const auto level = m_radio.decoderThreshold(); level && !m_decoderSlider->isSliderDown()) {
         m_applyingRadioState = true;

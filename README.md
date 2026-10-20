@@ -5,7 +5,7 @@ macOS and Linux. Written in C++20 with Qt 6.
 
 ![590Ctrl connected to a TS-590SG](docs/screenshot-0.12.png)
 
-Version 0.12 · Licensed under the [GPL-3.0](LICENSE).
+Version 0.13 · Licensed under the [GPL-3.0](LICENSE).
 
 ## Features
 
@@ -24,11 +24,15 @@ Version 0.12 · Licensed under the [GPL-3.0](LICENSE).
 - AGC off / slow / fast, with the time constant for the active mode
 - IF filter A/B with the mode-dependent high/low-cut or width/shift controls
 - Beat cancel (BC1 / BC2), and auto and manual notch with bandwidth and position
+- **MUTE** silences the received audio on the speaker and on the USB output to
+  the computer and TCI programs (the USB output level returns on unmute); red
+  while on
+- **LOCK** and **FINE**, as the radio's keys
 - Antenna: ANT1/ANT2, RX ANT, DRV, and the internal tuner (AT in line, ATun to
   run a tune cycle)
 
 **Transmit**
-- TX power, tune power, carrier level, mic gain, VOX and VOX level
+- TX power, tune power, carrier level, mic gain, VOX, VOX level and VOX delay
 - Speech processor with input and output levels
 - TX monitor with level
 - TX filter low/high cut for SSB/AM and SSB-DATA
@@ -116,9 +120,9 @@ Version 0.12 · Licensed under the [GPL-3.0](LICENSE).
 
 ## Installing on macOS
 
-Download `590Ctrl-0.12.dmg` from the
+Download `590Ctrl-0.13.dmg` from the
 [Releases](https://github.com/kingsqueak/590Ctrl/releases) page, open it, and
-drag **590Ctrl-0.12** to **Applications**. The app's name carries its version;
+drag **590Ctrl-0.13** to **Applications**. The app's name carries its version;
 delete the older copy (0.10 was plain `590Ctrl.app`) once the new
 one runs. Settings are kept. It runs on macOS 26.0 or later, on both
 Apple silicon and Intel Macs.
@@ -128,7 +132,7 @@ once, then go to **System Settings → Privacy & Security** and click **Open
 Anyway**. Alternatively, run:
 
 ```sh
-xattr -dr com.apple.quarantine /Applications/590Ctrl-0.12.app
+xattr -dr com.apple.quarantine /Applications/590Ctrl-0.13.app
 ```
 
 ## Building from source

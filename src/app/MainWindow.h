@@ -48,6 +48,7 @@ private:
     QWidget *createRitXitGroup();
     QWidget *createTxFilterGroup();
     QWidget *createNotchGroup();
+    QLayout *createPanelToggles();
     QWidget *createTransmitGroup();
     QWidget *createEqualizerPage();
     QWidget *createBandsPage();
@@ -70,6 +71,7 @@ private:
     void refreshBand();
     void refreshProcessor();
     void refreshBeatCancel();
+    void refreshPanelToggles();   // LOCK, MUTE, FINE
     void refreshSquelchOpen();
     void refreshKeyer();
     void refreshDecoder();
@@ -149,6 +151,7 @@ private:
     QSlider *m_tunePowerSlider = nullptr;
     QSlider *m_carrierSlider = nullptr;
     QSlider *m_voxGainSlider = nullptr;
+    QSlider *m_voxDelaySlider = nullptr;   // steps of kVoxDelayStepMs
     // PROC: one button steps on -> IN (slider = input level) -> OUT (slider
     // = output level) -> off.
     enum class ProcessorTarget { None, Input, Output };
@@ -170,6 +173,9 @@ private:
     QComboBox *m_txFilterCombos[ts590::kTxFilterCount] = {};
 
     QPushButton *m_beatCancelButton = nullptr;   // cycles BC -> BC1 -> BC2 -> off
+    QPushButton *m_lockButton = nullptr;
+    QPushButton *m_muteButton = nullptr;
+    QPushButton *m_fineButton = nullptr;
     QPushButton *m_autoNotchButton = nullptr;
     QPushButton *m_manualNotchButton = nullptr;
     QCheckBox *m_notchWideCheck = nullptr;

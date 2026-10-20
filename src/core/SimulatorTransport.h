@@ -131,6 +131,10 @@ private:
     QElapsedTimer m_booting;
     bool m_vox = false;
     int m_voxGain = 4;
+    int m_voxDelay = 300;   // ms
+    bool m_lock = false;
+    bool m_mute = false;
+    bool m_fineTuning = false;
     QByteArray m_antenna = "100";   // AN P1 P2 P3
     bool m_attenuator = false;
     bool m_preamp = false;

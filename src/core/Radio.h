@@ -59,6 +59,10 @@ public:
     bool transmitting() const { return m_transmitting; }
     bool vox() const { return m_vox; }   // break-in in CW
     std::optional<int> voxGain() const { return m_voxGain; }
+    std::optional<int> voxDelay() const { return m_voxDelay; }   // ms
+    bool locked() const { return m_lock; }
+    bool muted() const { return m_mute; }
+    bool fineTuning() const { return m_fineTuning; }
     int antenna() const { return m_antenna; }   // 1 or 2
     bool rxAntenna() const { return m_rxAntenna; }
     bool driveOut() const { return m_driveOut; }
@@ -142,6 +146,13 @@ public:
     void setTxMonitor(int level);   // 0 turns the monitor off
     void setVox(bool on);
     void setVoxGain(int level);
+    void setVoxDelay(int ms);
+    void setLock(bool on);
+    // MU mutes only the received audio, so muting also takes the USB audio
+    // output (to the computer and TCI clients) to 0, and unmuting puts the
+    // previous level back unless it was changed in the meantime.
+    void setMute(bool on);
+    void setFineTuning(bool on);
     void setAntenna(int number);
     void setRxAntenna(bool on);
     void setDriveOut(bool on);
@@ -223,6 +234,10 @@ signals:
     void txMonitorChanged(int level);
     void voxChanged(bool on);
     void voxGainChanged(int level);
+    void voxDelayChanged(int ms);
+    void lockChanged(bool on);
+    void muteChanged(bool on);
+    void fineTuningChanged(bool on);
     void antennaChanged();   // ANT1/2, RX ANT or DRV
     void attenuatorChanged(bool on);
     void preampChanged(bool on);
@@ -313,6 +328,11 @@ private:
     bool m_transmitting = false;
     bool m_vox = false;
     std::optional<int> m_voxGain;
+    std::optional<int> m_voxDelay;
+    bool m_lock = false;
+    bool m_mute = false;
+    bool m_fineTuning = false;
+    std::optional<int> m_usbOutBeforeMute;   // restored on unmute
     int m_antenna = 1;
     bool m_rxAntenna = false;
     bool m_driveOut = false;

@@ -623,6 +623,55 @@ private slots:
         QCOMPARE(radio.filterLayout().first.label, QStringLiteral("Shift"));
     }
 
+    void voxDelayLockAndFineTuning()
+    {
+        Radio radio;
+        connectSim(radio);
+        QCOMPARE(radio.voxDelay(), std::optional(300));
+        QVERIFY(!radio.locked() && !radio.muted() && !radio.fineTuning());
+
+        radio.setVoxDelay(500);   // rounded down to 150 ms steps
+        QTRY_COMPARE(radio.voxDelay(), std::optional(450));
+        QCOMPARE(cmd::voxDelay(5000), QByteArray("VD3000;"));
+
+        QSignalSpy locked(&radio, &Radio::lockChanged);
+        radio.setLock(true);
+        QTRY_VERIFY(radio.locked());
+        QCOMPARE(locked.count(), 1);
+        radio.setFineTuning(true);
+        QTRY_VERIFY(radio.fineTuning());
+    }
+
+    void muteAlsoSilencesUsbOutput()
+    {
+        Radio radio;
+        SimulatorTransport *sim = connectSim(radio);
+        const int usbOut = menuNumbersFor(kModelTs590SG).usbAudioOut;
+        QCOMPARE(radio.usbAudioOut(), std::optional(5));
+
+        QSignalSpy levels(&radio, &Radio::usbAudioOutChanged);
+        radio.setMute(true);
+        QTRY_VERIFY(radio.muted());
+        settle(radio);
+        QCOMPARE(sim->menu(usbOut), 0);
+        QCOMPARE(radio.usbAudioOut(), std::optional(0));
+        QCOMPARE(levels.count(), 1);   // the USB out slider follows
+
+        radio.setMute(false);
+        QTRY_VERIFY(!radio.muted());
+        settle(radio);
+        QCOMPARE(sim->menu(usbOut), 5);
+        QCOMPARE(radio.usbAudioOut(), std::optional(5));
+
+        // A level set while muted is kept on unmute.
+        radio.setMute(true);
+        settle(radio);
+        radio.setUsbAudioOut(3);
+        radio.setMute(false);
+        settle(radio);
+        QCOMPARE(sim->menu(usbOut), 3);
+    }
+
     void readsMenuBankAtConnect()
     {
         Radio radio;

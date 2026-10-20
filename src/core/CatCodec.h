@@ -76,6 +76,8 @@ constexpr int kCarrierLevelMax = 100;
 constexpr int kMicGainMax = 100;
 int txMonitorMax(int modelId);   // 20 on the SG, 9 on the S
 constexpr int kVoxGainMax = 9;   // VG
+constexpr int kVoxDelayMaxMs = 3000;   // VD, in steps of kVoxDelayStepMs
+constexpr int kVoxDelayStepMs = 150;
 
 // S-meter (SM): 0..30 display dots. Matches the front-panel scale: S1, S3,
 // S5, S7, S9 every 3 dots (S9 = 15), then +20, +40, +60 dB every 5 dots.
@@ -273,6 +275,10 @@ QByteArray carrierLevel(int level);              // CG
 QByteArray micGain(int level);                   // MG
 QByteArray txMonitor(int level);                 // ML, 0 = off
 QByteArray voxGain(int level);                   // VG
+QByteArray voxDelay(int ms);                     // VD, rounded down to 150 ms steps
+QByteArray lock(bool on);                        // LK
+QByteArray mute(bool on);                        // MU: received audio only
+QByteArray fineTuning(bool on);                  // FS
 // AN sets one field at a time; the others are sent as 9 ("no change").
 QByteArray antenna(int number);                  // ANT1 / ANT2
 QByteArray rxAntenna(bool on);                   // RX ANT in use

@@ -281,6 +281,15 @@ MainWindow::MainWindow(QWidget *parent)
     connect(&m_radio, &Radio::txPowerChanged, this, follow(m_txPowerSlider));
     connect(&m_radio, &Radio::carrierLevelChanged, this, follow(m_carrierSlider));
     connect(&m_radio, &Radio::voxGainChanged, this, follow(m_voxGainSlider));
+    connect(&m_radio, &Radio::voxDelayChanged, this, [this](int ms) {
+        if (m_voxDelaySlider->isSliderDown())
+            return;
+        m_applyingRadioState = true;
+        m_voxDelaySlider->setValue(ms / kVoxDelayStepMs);
+        m_applyingRadioState = false;
+    });
+    for (auto signal : {&Radio::lockChanged, &Radio::muteChanged, &Radio::fineTuningChanged})
+        connect(&m_radio, signal, this, &MainWindow::refreshPanelToggles);
     connect(&m_radio, &Radio::micGainChanged, this, follow(m_micGainSlider));
     connect(&m_radio, &Radio::txMonitorChanged, this, &MainWindow::refreshMonitor);
     connect(&m_radio, &Radio::tunePowerChanged, this, follow(m_tunePowerSlider));
@@ -817,6 +826,7 @@ QWidget *MainWindow::createOperatePage()
     middle->addWidget(filters);
     middle->addWidget(createTxFilterGroup());
     middle->addWidget(createNotchGroup());
+    middle->addLayout(createPanelToggles());
     middle->addStretch();
 
     auto *page = new QWidget;
@@ -907,6 +917,39 @@ QWidget *MainWindow::createNotchGroup()
     row->addWidget(value);
     layout->addLayout(row, 1, 0, 1, 4);
     return group;
+}
+
+QLayout *MainWindow::createPanelToggles()
+{
+    auto toggle = [this](const QString &text, const QString &tip, void (Radio::*setter)(bool)) {
+        auto *button = new QPushButton(text);
+        button->setCheckable(true);
+        button->setToolTip(tip);
+        connect(button, &QPushButton::clicked, this, [this, setter](bool on) {
+            (m_radio.*setter)(on);
+            refreshPanelToggles();   // show the radio's state until it answers
+        });
+        m_radioControls << button;
+        return button;
+    };
+    m_lockButton = toggle(tr("LOCK"), tr("Lock the radio's tuning controls"), &Radio::setLock);
+    m_muteButton = toggle(tr("MUTE"),
+                          tr("Mute the received audio: the speaker and the USB audio output to the computer "
+                             "and TCI programs. Turning it off puts the USB output level back."),
+                          &Radio::setMute);
+    // Red while muted, like SEND; the native look otherwise.
+    m_muteButton->setObjectName(QStringLiteral("muteButton"));
+    m_muteButton->setStyleSheet(QStringLiteral(
+        "#muteButton:checked { background: #e74c3c; color: white; font-weight: bold;"
+        "  border: 1px solid #c0392b; border-radius: 5px; padding: 3px 12px; }"));
+    m_fineButton = toggle(tr("FINE"), tr("Fine tuning, as the radio's FINE key"), &Radio::setFineTuning);
+
+    auto *row = new QHBoxLayout;
+    row->addWidget(m_lockButton);
+    row->addWidget(m_muteButton);
+    row->addWidget(m_fineButton);
+    row->addStretch();
+    return row;
 }
 
 QWidget *MainWindow::createRitXitGroup()
@@ -1002,6 +1045,24 @@ QWidget *MainWindow::createTransmitGroup()
     voxGainRow->addWidget(m_voxGainSlider, 1);
     voxGainRow->addWidget(voxGainValue);
     m_transmitForm->addRow(tr("VOX level"), voxGainRow);
+
+    m_voxDelaySlider = new QSlider(Qt::Horizontal);
+    m_voxDelaySlider->setRange(0, kVoxDelayMaxMs / kVoxDelayStepMs);
+    m_voxDelaySlider->setToolTip(tr("VOX delay: how long the radio stays in transmit after you stop speaking"));
+    connect(m_voxDelaySlider, &QSlider::valueChanged, this, [this](int steps) {
+        if (!m_applyingRadioState)
+            m_radio.setVoxDelay(steps * kVoxDelayStepMs);
+    });
+    m_radioControls << m_voxDelaySlider;
+    auto *voxDelayValue = new QLabel(tr("%1 ms").arg(0));
+    voxDelayValue->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    voxDelayValue->setMinimumWidth(voxDelayValue->fontMetrics().horizontalAdvance(tr("%1 ms").arg(3000)) + 4);
+    connect(m_voxDelaySlider, &QSlider::valueChanged, voxDelayValue,
+            [voxDelayValue](int steps) { voxDelayValue->setText(tr("%1 ms").arg(steps * kVoxDelayStepMs)); });
+    auto *voxDelayRow = new QHBoxLayout;
+    voxDelayRow->addWidget(m_voxDelaySlider, 1);
+    voxDelayRow->addWidget(voxDelayValue);
+    m_transmitForm->addRow(tr("VOX delay"), voxDelayRow);
 
     m_processorButton = new QPushButton(tr("PROC"));
     m_processorButton->setCheckable(true);
@@ -1528,6 +1589,7 @@ void MainWindow::onStateChanged(Radio::State state)
         refreshBand();
         refreshProcessor();
         refreshBeatCancel();
+        refreshPanelToggles();
         refreshSquelchOpen();
         refreshKeyer();
         refreshDecoder();
@@ -1548,6 +1610,7 @@ void MainWindow::onStateChanged(Radio::State state)
         refreshBand();
         refreshProcessor();
         refreshBeatCancel();
+        refreshPanelToggles();
         refreshSquelchOpen();
         refreshKeyer();
         refreshDecoder();
@@ -1801,6 +1864,14 @@ void MainWindow::refreshBeatCancel()
     m_beatCancelButton->setText(beatCancelName(bc));
     m_beatCancelButton->setChecked(bc != BeatCancel::Off);
     m_beatCancelButton->setEnabled(available);
+}
+
+void MainWindow::refreshPanelToggles()
+{
+    const bool connected = m_radio.state() == Radio::State::Connected;
+    m_lockButton->setChecked(connected && m_radio.locked());
+    m_muteButton->setChecked(connected && m_radio.muted());
+    m_fineButton->setChecked(connected && m_radio.fineTuning());
 }
 
 void MainWindow::refreshSquelchOpen()

@@ -154,6 +154,12 @@ void Radio::disconnectFromRadio()
         // Bypass the queue. Never leave the radio transmitting.
         if (m_keyed || m_transmitting)
             transport->write("RX;");
+        // The radio keeps the USB output level; don't leave it muted at 0.
+        if (m_usbOutBeforeMute) {
+            transport->write(cmd::mute(false));
+            transport->write(cmd::setMenu(menuNumbersFor(m_modelId).usbAudioOut,
+                                          QByteArray::number(*m_usbOutBeforeMute)));
+        }
         // Put AI back the way we found it.
         if (m_originalAutoInfo)
             transport->write(cmd::autoInfo(*m_originalAutoInfo));
@@ -180,6 +186,9 @@ void Radio::resetRadioState()
     m_keyed = false;
     m_vox = false;
     m_voxGain.reset();
+    m_voxDelay.reset();
+    m_lock = m_mute = m_fineTuning = false;
+    m_usbOutBeforeMute.reset();
     m_antenna = 1;
     m_rxAntenna = m_driveOut = m_attenuator = m_preamp = false;
     m_rxTuner = m_txTuner = m_tunerTuning = false;
@@ -263,7 +272,7 @@ void Radio::requestFullState()
     // Menu answers belong to whichever set is selected.
     m_link.query("MF;");
     requestTrackedMenus();
-    for (const char *read : {"FA;", "FB;", "FR;", "FT;", "IF;", "RT;", "XT;", "DA;", "AG0;", "SQ0;", "RG;", "PC;", "NT;", "BP;", "NB;", "NR;", "CG;", "MG;", "ML;", "VX;", "VG;", "AN;", "RA;", "PA;", "AC;", "PR;", "PL;", "BC;", "KS;", "SD;", "CA;"})
+    for (const char *read : {"FA;", "FB;", "FR;", "FT;", "IF;", "RT;", "XT;", "DA;", "AG0;", "SQ0;", "RG;", "PC;", "NT;", "BP;", "NB;", "NR;", "CG;", "MG;", "ML;", "VX;", "VG;", "VD;", "LK;", "MU;", "FS;", "AN;", "RA;", "PA;", "AC;", "PR;", "PL;", "BC;", "KS;", "SD;", "CA;"})
         m_link.query(read);
     if (m_modelId == kModelTs590SG) {
         m_link.query("TP;");
@@ -600,6 +609,17 @@ void Radio::handleFrame(const QByteArray &frame)
             m_voxGain = *level;
             emit voxGainChanged(*level);
         }
+    } else if (name == "VD" && frame.size() == 6) {
+        if (const auto ms = numberAt(frame, 2); ms && m_voxDelay != *ms) {
+            m_voxDelay = *ms;
+            emit voxDelayChanged(*ms);
+        }
+    } else if (name == "LK" && frame.size() == 4) {
+        update(m_lock, frame[2] == '1', &Radio::lockChanged);
+    } else if (name == "MU" && frame.size() == 3) {
+        update(m_mute, frame[2] == '1', &Radio::muteChanged);
+    } else if (name == "FS" && frame.size() == 3) {
+        update(m_fineTuning, frame[2] == '1', &Radio::fineTuningChanged);
     } else if (name == "AN" && frame.size() == 5) {
         const int antenna = frame[2] == '2' ? 2 : 1;
         const bool rxAntenna = frame[3] == '1';
@@ -935,14 +955,22 @@ void Radio::writeMenuItem(MenuBank bank, int number, const QByteArray &value)
     });
 }
 
+// The read-back matches what setMenuValue stored, so announce changes here or
+// the sliders miss ones not made with them (mute, TCI).
 void Radio::setUsbAudioIn(int level)
 {
+    const auto before = m_usbAudioIn;
     setMenuValue(menuNumbersFor(m_modelId).usbAudioIn, m_usbAudioIn, level, kUsbAudioLevelMax);
+    if (m_usbAudioIn != before)
+        emit usbAudioInChanged(*m_usbAudioIn);
 }
 
 void Radio::setUsbAudioOut(int level)
 {
+    const auto before = m_usbAudioOut;
     setMenuValue(menuNumbersFor(m_modelId).usbAudioOut, m_usbAudioOut, level, kUsbAudioLevelMax);
+    if (m_usbAudioOut != before)
+        emit usbAudioOutChanged(*m_usbAudioOut);
 }
 
 void Radio::setTxFilter(TxFilter filter, int index)
@@ -1218,6 +1246,39 @@ void Radio::setVox(bool on)
 void Radio::setVoxGain(int level)
 {
     setLevel(&cmd::voxGain, m_voxGain, level, kVoxGainMax);
+}
+
+void Radio::setVoxDelay(int ms)
+{
+    m_link.send(cmd::voxDelay(ms), "VD");
+    m_link.query("VD;");
+}
+
+void Radio::setLock(bool on)
+{
+    m_link.send(cmd::lock(on), "LK");
+    m_link.query("LK;");
+}
+
+void Radio::setMute(bool on)
+{
+    if (on && !m_usbOutBeforeMute && m_usbAudioOut.value_or(0) > 0) {
+        m_usbOutBeforeMute = m_usbAudioOut;
+        setUsbAudioOut(0);
+    } else if (!on && m_usbOutBeforeMute) {
+        // A level changed while muted is the one to keep.
+        if (m_usbAudioOut.value_or(0) == 0)
+            setUsbAudioOut(*m_usbOutBeforeMute);
+        m_usbOutBeforeMute.reset();
+    }
+    m_link.send(cmd::mute(on), "MU");
+    m_link.query("MU;");
+}
+
+void Radio::setFineTuning(bool on)
+{
+    m_link.send(cmd::fineTuning(on), "FS");
+    m_link.query("FS;");
 }
 
 void Radio::setAntenna(int number)

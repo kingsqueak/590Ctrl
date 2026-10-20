@@ -543,6 +543,16 @@ QByteArray txMonitor(int level) { return "ML" + digits(std::clamp(level, 0, 20),
 
 QByteArray voxGain(int level) { return "VG" + digits(std::clamp(level, 0, kVoxGainMax), 3) + ';'; }
 
+QByteArray voxDelay(int ms)
+{
+    ms = std::clamp(ms, 0, kVoxDelayMaxMs);
+    return "VD" + digits(ms - ms % kVoxDelayStepMs, 4) + ';';
+}
+
+QByteArray lock(bool on) { return on ? "LK10;" : "LK00;"; }
+QByteArray mute(bool on) { return on ? "MU1;" : "MU0;"; }
+QByteArray fineTuning(bool on) { return on ? "FS1;" : "FS0;"; }
+
 QByteArray antenna(int number) { return number == 2 ? "AN299;" : "AN199;"; }
 
 QByteArray rxAntenna(bool on) { return on ? "AN919;" : "AN909;"; }

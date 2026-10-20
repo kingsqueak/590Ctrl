@@ -161,6 +161,14 @@ QByteArray SimulatorTransport::answerFor(QByteArrayView name) const
         return m_vox ? "VX1" : "VX0";
     if (name == "VG")
         return "VG" + digits(m_voxGain, 3);
+    if (name == "VD")
+        return "VD" + digits(m_voxDelay, 4);
+    if (name == "LK")
+        return m_lock ? "LK10" : "LK00";
+    if (name == "MU")
+        return m_mute ? "MU1" : "MU0";
+    if (name == "FS")
+        return m_fineTuning ? "FS1" : "FS0";
     if (name == "AN")
         return "AN" + m_antenna;
     if (name == "RA")
@@ -427,6 +435,26 @@ void SimulatorTransport::handle(const QByteArray &command)
             return reply("?");
         m_vox = args == "1";
         return echo(answerFor("VX"));
+    }
+    if (name == "VD") {
+        const auto ms = args.size() == 4 ? number(args) : std::nullopt;
+        if (!ms)
+            return reply("?");
+        const int clamped = std::min(int(*ms), kVoxDelayMaxMs);
+        m_voxDelay = clamped - clamped % kVoxDelayStepMs;
+        return echo(answerFor("VD"));
+    }
+    if (name == "LK") {
+        if (args != "00" && args != "10")
+            return reply("?");
+        m_lock = args == "10";
+        return echo(answerFor("LK"));
+    }
+    if (name == "MU" || name == "FS") {
+        if (args != "0" && args != "1")
+            return reply("?");
+        (name == "MU" ? m_mute : m_fineTuning) = args == "1";
+        return echo(answerFor(name));
     }
     if (name == "RT" || name == "XT") {
         if (args != "0" && args != "1")

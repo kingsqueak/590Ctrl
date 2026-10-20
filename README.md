@@ -135,6 +135,26 @@ Anyway**. Alternatively, run:
 xattr -dr com.apple.quarantine /Applications/590Ctrl-0.13.1.app
 ```
 
+## Installing on Ubuntu
+
+Packages for Ubuntu 26.04 LTS are on the
+[Releases](https://github.com/kingsqueak/590Ctrl/releases) page. They use
+that release's Qt 6, which apt installs with the package.
+
+- `590ctrl_0.13.1-1_amd64.deb` for Intel and AMD PCs
+- `590ctrl_0.13.1-1_arm64.deb` for arm64
+
+```sh
+sudo apt install ./590ctrl_0.13.1-1_amd64.deb
+```
+
+The account that operates the radio needs to be in the `dialout` group.
+Add it, then log out and back in:
+
+```sh
+sudo usermod -aG dialout "$USER"
+```
+
 ## Building from source
 
 Requires **Qt 6.8 or newer** (Core, Widgets, SerialPort, Network, WebSockets,

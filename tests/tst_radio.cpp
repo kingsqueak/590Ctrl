@@ -1,3 +1,4 @@
+#include "MenuTable.h"
 #include "Radio.h"
 #include "SimulatorTransport.h"
 
@@ -620,6 +621,79 @@ private slots:
         radio.setMeterPolling(false);
         settle(radio);
         QCOMPARE(radio.filterLayout().first.label, QStringLiteral("Shift"));
+    }
+
+    void readsMenuBankAtConnect()
+    {
+        Radio radio;
+        SimulatorTransport *sim = connectSim(radio);
+        QCOMPARE(radio.menuBank(), std::optional(MenuBank::A));
+
+        // Switching sets changes every menu setting, so the cached ones follow.
+        const int usbOut = menuNumbersFor(kModelTs590SG).usbAudioOut;
+        sim->setMenu(MenuBank::B, usbOut, 8);
+        QSignalSpy bankChanged(&radio, &Radio::menuBankChanged);
+        radio.selectMenuBank(MenuBank::B);
+        QCOMPARE(bankChanged.count(), 1);
+        QTRY_COMPARE(sim->menuBank(), MenuBank::B);
+        QTRY_COMPARE(radio.usbAudioOut(), std::optional(8));
+    }
+
+    void readsAndWritesTheOtherMenuBank()
+    {
+        Radio radio;
+        SimulatorTransport *sim = connectSim(radio);
+        const int usbOut = menuNumbersFor(kModelTs590SG).usbAudioOut;
+        sim->setMenu(MenuBank::B, usbOut, 9);
+
+        QSignalSpy read(&radio, &Radio::menuItemRead);
+        radio.readMenuItems(MenuBank::B, {usbOut});
+        settle(radio);
+        QCOMPARE(read.count(), 1);
+        QCOMPARE(read[0][0].value<MenuBank>(), MenuBank::B);
+        QCOMPARE(read[0][1].toInt(), usbOut);
+        QCOMPARE(read[0][2].toByteArray(), QByteArray("9"));
+        // Read in passing: menu A stays selected and its value stays cached.
+        QCOMPARE(sim->menuBank(), MenuBank::A);
+        QCOMPARE(radio.usbAudioOut(), std::optional(5));
+
+        radio.writeMenuItem(MenuBank::B, usbOut, "3");
+        settle(radio);
+        QCOMPARE(sim->menu(MenuBank::B, usbOut), 3);
+        QCOMPARE(sim->menu(MenuBank::A, usbOut), 5);
+        QCOMPARE(sim->menuBank(), MenuBank::A);
+        QCOMPARE(radio.usbAudioOut(), std::optional(5));
+
+        // A write to the set in use updates the cached setting too.
+        radio.writeMenuItem(MenuBank::A, usbOut, "2");
+        QTRY_COMPARE(radio.usbAudioOut(), std::optional(2));
+    }
+
+    void menuTablesMatchKnownMenus()
+    {
+        for (int model : {kModelTs590S, kModelTs590SG}) {
+            const MenuNumbers menus = menuNumbersFor(model);
+            QVERIFY(findMenuItem(model, menus.usbAudioIn)->name.startsWith(QStringLiteral("USB audio input")));
+            QVERIFY(findMenuItem(model, menus.powerFine)->name == QStringLiteral("Power fine"));
+            QVERIFY(findMenuItem(model, menus.cwPitch)->name.startsWith(QStringLiteral("Sidetone")));
+            QCOMPARE(findMenuItem(model, menus.cwPitch)->choices.size(), 15);   // 300..1000 Hz
+            QVERIFY(findMenuItem(model, menus.txFilter[3])->name.startsWith(QStringLiteral("SSB-DATA TX filter high")));
+            // Numbered 000.. without gaps.
+            const QList<MenuItem> &items = menuItemsFor(model);
+            for (int i = 0; i < items.size(); ++i)
+                QCOMPARE(items[i].number, i);
+        }
+        QCOMPARE(menuItemsFor(kModelTs590S).size(), 88);
+        QCOMPARE(menuItemsFor(kModelTs590SG).size(), 100);
+        QVERIFY(findMenuItem(kModelTs590SG, 68)->locked);   // USB port speed
+
+        const MenuItem *weight = findMenuItem(kModelTs590SG, 42);
+        QCOMPARE(menuValueText(*weight, "00"), QStringLiteral("AUTO"));
+        QCOMPARE(menuValueText(*weight, "16"), QStringLiteral("4.0"));
+        QCOMPARE(menuValueText(*weight, "99"), QStringLiteral("99"));
+        QCOMPARE(menuValueText(*findMenuItem(kModelTs590SG, 87), "255"), QStringLiteral("OFF"));
+        QCOMPARE(menuIndexValue(6, 2), QByteArray("06"));
+        QCOMPARE(menuValueText(*findMenuItem(kModelTs590SG, 16), "2"), QStringLiteral("1"));   // kHz, on hardware
     }
 
     void eqLevelsRejectedWhileOff()

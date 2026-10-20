@@ -107,6 +107,9 @@ public:
     FilterLayout filterLayout() const;
     std::optional<int> filterValue(FilterCommand command) const;
 
+    // Menu A or B (MF), as selected here or found at connect; nullopt until read.
+    std::optional<MenuBank> menuBank() const { return m_menuBank; }
+
     EqMode eqMode() const { return eqModeFor(m_mode, m_data); }
     std::optional<EqCurve> eqCurve(EqType type) const;
     std::optional<EqLevels> eqLevels(EqType type) const { return m_eqLevels[int(type)]; }
@@ -192,6 +195,14 @@ public:
 
     void setMeterPolling(bool on);
 
+    // MF: switches the radio to the other menu set, which changes every menu
+    // setting at once.
+    void selectMenuBank(MenuBank bank);
+    // EX for either menu set. For the one not selected, the radio is switched
+    // to it and back around the accesses. Answers arrive as menuItemRead.
+    void readMenuItems(MenuBank bank, const QList<int> &numbers);
+    void writeMenuItem(MenuBank bank, int number, const QByteArray &value);
+
 signals:
     void stateChanged(ts590::Radio::State state);
     void identified(int modelId, const QString &firmware);
@@ -236,6 +247,9 @@ signals:
     void filterChanged();
     void eqCurveChanged(ts590::EqType type);
     void eqLevelsChanged(ts590::EqType type);
+    void menuBankChanged(ts590::MenuBank bank);
+    // Every EX answer, with the menu set it came from. value is the raw P5.
+    void menuItemRead(ts590::MenuBank bank, int number, const QByteArray &value);
     void message(const QString &text);   // user-facing errors and warnings
 
 private:
@@ -245,6 +259,10 @@ private:
     void handleTransportFailure(const QString &message);
     void setState(State state);
     void requestFullState();
+    void requestTrackedMenus();
+    // Runs `commands` with `bank` selected, switching to it and back if needed.
+    template <typename Commands>
+    void inMenuBank(MenuBank bank, Commands commands);
     void requestModeDependentState();
     void requestFilterValues();
     void applyMode(Mode mode, std::optional<bool> data);
@@ -344,6 +362,9 @@ private:
     bool m_ssbWidthShift = false;       // EX028
     bool m_ssbDataWidthShift = false;   // EX029
     std::optional<int> m_sh, m_sl, m_fw, m_is;
+
+    std::optional<MenuBank> m_menuBank;    // the set in use
+    std::optional<MenuBank> m_replyBank;   // the set selected when the latest answer was sent
 
     std::optional<EqCurve> m_eqCurves[2][8];
     std::optional<EqLevels> m_eqLevels[2];

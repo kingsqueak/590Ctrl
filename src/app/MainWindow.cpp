@@ -4,6 +4,7 @@
 #include "PowerButton.h"
 #include "CatMonitor.h"
 #include "EqualizerPanel.h"
+#include "MenuPanel.h"
 #include "FrequencyDisplay.h"
 #include "SerialTransport.h"
 #include "SMeter.h"
@@ -131,6 +132,7 @@ MainWindow::MainWindow(QWidget *parent)
     tabs->addTab(createEqualizerPage(), tr("Equalizer"));
     tabs->addTab(createBandsPage(), tr("Bands"));
     tabs->addTab(createCwPage(), tr("CW"));
+    tabs->addTab(new MenuPanel(&m_radio), tr("Menu"));
     tabs->addTab(createQrzPage(), tr("QRZ"));
 
     auto *central = new QWidget;

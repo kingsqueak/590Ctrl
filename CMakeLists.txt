@@ -23,6 +23,7 @@ qt_add_library(ts590core STATIC
     src/core/SimulatorTransport.h src/core/SimulatorTransport.cpp
     src/core/CatLink.h src/core/CatLink.cpp
     src/core/Radio.h src/core/Radio.cpp
+    src/core/MenuTable.h src/core/MenuTable.cpp
     src/core/EqPresetLibrary.h src/core/EqPresetLibrary.cpp
     src/core/EqAutoLoader.h src/core/EqAutoLoader.cpp
     src/core/Qrz.h src/core/Qrz.cpp
@@ -38,6 +39,7 @@ qt_add_executable(590Ctrl
     src/app/MainWindow.h src/app/MainWindow.cpp
     src/app/FrequencyDisplay.h src/app/FrequencyDisplay.cpp
     src/app/EqualizerPanel.h src/app/EqualizerPanel.cpp
+    src/app/MenuPanel.h src/app/MenuPanel.cpp
     src/app/CatMonitor.h src/app/CatMonitor.cpp
     src/app/WheelSteps.h
     src/app/SMeter.h src/app/SMeter.cpp

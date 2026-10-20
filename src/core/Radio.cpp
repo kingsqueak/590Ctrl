@@ -191,6 +191,8 @@ void Radio::resetRadioState()
     m_sh = m_sl = m_fw = m_is = std::nullopt;
     m_usbAudioIn.reset();
     m_usbAudioOut.reset();
+    m_menuBank.reset();
+    m_replyBank.reset();
     m_rit = m_xit = false;
     m_ritXitOffset = 0;
     m_txPower.reset();
@@ -258,6 +260,22 @@ void Radio::requestFullState()
     m_link.query("FV;");
     m_link.query("AI;");
     m_link.send(cmd::autoInfo(kAutoInfoLevel));
+    // Menu answers belong to whichever set is selected.
+    m_link.query("MF;");
+    requestTrackedMenus();
+    for (const char *read : {"FA;", "FB;", "FR;", "FT;", "IF;", "RT;", "XT;", "DA;", "AG0;", "SQ0;", "RG;", "PC;", "NT;", "BP;", "NB;", "NR;", "CG;", "MG;", "ML;", "VX;", "VG;", "AN;", "RA;", "PA;", "AC;", "PR;", "PL;", "BC;", "KS;", "SD;", "CA;"})
+        m_link.query(read);
+    if (m_modelId == kModelTs590SG) {
+        m_link.query("TP;");
+        m_link.query("CD0;");
+        m_link.query("CD1;");
+    }
+    // MD's answer sets the mode, which pulls everything mode-dependent.
+    m_link.query("MD;");
+}
+
+void Radio::requestTrackedMenus()
+{
     const MenuNumbers menus = menuNumbersFor(m_modelId);
     // Filter knob meaning depends on these, so read them before the mode.
     for (int menu :
@@ -268,15 +286,6 @@ void Radio::requestFullState()
     }
     for (int menu : menus.txFilter)
         m_link.query(cmd::readMenu(menu));
-    for (const char *read : {"FA;", "FB;", "FR;", "FT;", "IF;", "RT;", "XT;", "DA;", "AG0;", "SQ0;", "RG;", "PC;", "NT;", "BP;", "NB;", "NR;", "CG;", "MG;", "ML;", "VX;", "VG;", "AN;", "RA;", "PA;", "AC;", "PR;", "PL;", "BC;", "KS;", "SD;", "CA;"})
-        m_link.query(read);
-    if (m_modelId == kModelTs590SG) {
-        m_link.query("TP;");
-        m_link.query("CD0;");
-        m_link.query("CD1;");
-    }
-    // MD's answer sets the mode, which pulls everything mode-dependent.
-    m_link.query("MD;");
 }
 
 void Radio::requestModeDependentState()
@@ -639,10 +648,24 @@ void Radio::handleFrame(const QByteArray &frame)
             field = v;
             emit filterChanged();
         }
+    } else if (name == "MF") {
+        if (const auto bank = parseMenuBank(frame)) {
+            m_replyBank = bank;
+            // Later answers only confirm switches made here.
+            if (!m_menuBank) {
+                m_menuBank = bank;
+                emit menuBankChanged(*bank);
+            }
+        }
     } else if (name == "EX") {
         const auto menu = parseMenu(frame);
-        const auto value = menu ? parseNumber(menu->value) : std::nullopt;
-        if (!value)
+        if (!menu)
+            return;
+        const MenuBank bank = m_replyBank.value_or(m_menuBank.value_or(MenuBank::A));
+        emit menuItemRead(bank, menu->number, menu->value);
+        // The cached settings follow the set in use, not one read in passing.
+        const auto value = parseNumber(menu->value);
+        if (!value || (m_menuBank && bank != *m_menuBank))
             return;
         const MenuNumbers menus = menuNumbersFor(m_modelId);
         if (menu->number == menus.usbAudioIn || menu->number == menus.usbAudioOut) {
@@ -864,6 +887,52 @@ void Radio::setMenuValue(int menu, std::optional<int> &field, int value, int max
     m_link.send(cmd::setMenu(menu, QByteArray::number(value).rightJustified(width, '0')), read.chopped(1));
     // EX sets don't reliably echo; read back so the UI tracks the radio.
     m_link.query(read);
+}
+
+template <typename Commands>
+void Radio::inMenuBank(MenuBank bank, Commands commands)
+{
+    // Sets with no coalesce key, so nothing queued later can move into or out
+    // of the window where the other set is selected.
+    const bool other = m_menuBank && bank != *m_menuBank;
+    if (other) {
+        m_link.send(cmd::menuBank(bank));
+        m_link.query("MF;");
+    }
+    commands();
+    if (other) {
+        m_link.send(cmd::menuBank(*m_menuBank));
+        m_link.query("MF;");
+    }
+}
+
+void Radio::selectMenuBank(MenuBank bank)
+{
+    if (m_menuBank == bank)
+        return;
+    m_link.send(cmd::menuBank(bank));
+    m_link.query("MF;");
+    m_menuBank = bank;
+    emit menuBankChanged(bank);
+    // Every menu setting just changed with it.
+    requestTrackedMenus();
+}
+
+void Radio::readMenuItems(MenuBank bank, const QList<int> &numbers)
+{
+    inMenuBank(bank, [&] {
+        for (int number : numbers)
+            m_link.query(cmd::readMenu(number));
+    });
+}
+
+void Radio::writeMenuItem(MenuBank bank, int number, const QByteArray &value)
+{
+    inMenuBank(bank, [&] {
+        m_link.send(cmd::setMenu(number, value));
+        // EX sets don't reliably echo; read back so the editor tracks the radio.
+        m_link.query(cmd::readMenu(number));
+    });
 }
 
 void Radio::setUsbAudioIn(int level)

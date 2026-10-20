@@ -30,16 +30,17 @@ SimulatorTransport::SimulatorTransport(QObject *parent)
     m_eqLevels[int(EqType::Tx)] = flatEqLevels();
     m_eqCurves[int(EqType::Rx)][int(EqMode::SsbData)] = EqCurve::User;
     m_eqCurves[int(EqType::Tx)][int(EqMode::SsbData)] = EqCurve::User;
-    const MenuNumbers menus = menuNumbersFor(kModelTs590SG);
-    m_menus[menus.usbAudioIn] = 4;
-    m_menus[menus.usbAudioOut] = 5;
-    m_menus[menus.powerFine] = 0;
+    const MenuNumbers numbers = menuNumbersFor(kModelTs590SG);
+    menus()[numbers.usbAudioIn] = 4;
+    menus()[numbers.usbAudioOut] = 5;
+    menus()[numbers.powerFine] = 0;
     // TX filters: 100 Hz low cut, 2900 Hz high cut (SSB and SSB-DATA).
-    m_menus[menus.txFilter[0]] = 1;
-    m_menus[menus.txFilter[1]] = 4;
-    m_menus[menus.txFilter[2]] = 1;
-    m_menus[menus.txFilter[3]] = 4;
-    m_menus[menus.cwPitch] = 6;   // 600 Hz
+    menus()[numbers.txFilter[0]] = 1;
+    menus()[numbers.txFilter[1]] = 4;
+    menus()[numbers.txFilter[2]] = 1;
+    menus()[numbers.txFilter[3]] = 4;
+    menus()[numbers.cwPitch] = 6;   // 600 Hz
+    m_menuSets[int(MenuBank::B)] = m_menuSets[int(MenuBank::A)];
 
     m_decoderTimer.setInterval(150);
     connect(&m_decoderTimer, &QTimer::timeout, this, [this] {
@@ -125,11 +126,13 @@ bool SimulatorTransport::busy() const
 FilterLayout SimulatorTransport::currentFilters() const
 {
     const int menu = m_data ? 29 : 28;
-    return filterLayoutFor(m_mode, m_data, m_menus.value(menu) == 1);
+    return filterLayoutFor(m_mode, m_data, menus().value(menu) == 1);
 }
 
 QByteArray SimulatorTransport::answerFor(QByteArrayView name) const
 {
+    if (name == "MF")
+        return "MF" + QByteArray::number(int(m_menuBank));
     if (name == "FA")
         return "FA" + digits(m_freqA, 11);
     if (name == "FB")
@@ -579,7 +582,7 @@ void SimulatorTransport::handle(const QByteArray &command)
             return reply("?");
         const int maximum = name == "PC" ? txPowerMax(m_mode) : kTxPowerMax;
         *watts = std::clamp(*watts, kTxPowerMin, maximum);
-        if (m_menus.value(menuNumbersFor(kModelTs590SG).powerFine) == 0)
+        if (menus().value(menuNumbersFor(kModelTs590SG).powerFine) == 0)
             *watts -= *watts % 5;
         (name == "PC" ? m_txPower : m_tunePower) = *watts;
         return echo(answerFor(name));
@@ -644,13 +647,19 @@ void SimulatorTransport::handle(const QByteArray &command)
         target = filterRawForIndex(*control, filterIndexForRaw(*control, *v));
         return echo(answerFor(name));
     }
+    if (name == "MF") {
+        if (args != "0" && args != "1")
+            return reply("?");
+        m_menuBank = args == "1" ? MenuBank::B : MenuBank::A;
+        return;
+    }
     if (name == "EX") {
         const auto answer = parseMenu(command);
         if (!answer)
             return reply("?");
         if (answer->value.isEmpty())
-            return reply(command + QByteArray::number(m_menus.value(answer->number)));
-        m_menus[answer->number] = number(answer->value).value_or(0);
+            return reply(command + QByteArray::number(menus().value(answer->number)));
+        menus()[answer->number] = number(answer->value).value_or(0);
         return echo(command);
     }
     if (name == "EQ") {

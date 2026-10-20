@@ -41,6 +41,10 @@ enum class Vfo : int { A = 0, B = 1, Memory = 2 };
 
 enum class FilterSlot : int { A = 1, B = 2 };
 
+// MF: the radio keeps two complete menu sets and EX reads and writes the
+// one selected.
+enum class MenuBank : int { A = 0, B = 1 };
+
 QString modeName(Mode mode);
 std::optional<Mode> modeFromChar(char c);
 bool modeSupportsData(Mode mode);   // DATA is valid in LSB/USB/FM/AM only
@@ -313,6 +317,7 @@ QByteArray filterValue(FilterCommand command, int raw);  // SH / SL / FW / IS
 QByteArray readFilterValue(FilterCommand command);
 QByteArray readMenu(int number);                 // EX
 QByteArray setMenu(int number, QByteArrayView value);
+QByteArray menuBank(MenuBank bank);              // MF
 QByteArray readEqCurve(EqType type, EqMode mode);
 QByteArray eqCurve(EqType type, EqMode mode, EqCurve curve);
 QByteArray readEqLevels(EqType type);            // UR / UT
@@ -357,5 +362,6 @@ struct MenuAnswer {
     QByteArray value;
 };
 std::optional<MenuAnswer> parseMenu(QByteArrayView frame);
+std::optional<MenuBank> parseMenuBank(QByteArrayView frame);   // "MF0" / "MF1"
 
 }   // namespace ts590

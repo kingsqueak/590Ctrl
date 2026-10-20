@@ -29,8 +29,12 @@ public:
 
     // Test hooks.
     QByteArrayList received() const { return m_received; }
-    int menu(int number) const { return m_menus.value(number); }
-    void setMenu(int number, int value) { m_menus[number] = value; }
+    // Menu values in the selected menu set, or in a given one.
+    int menu(int number) const { return menus().value(number); }
+    void setMenu(int number, int value) { menus()[number] = value; }
+    int menu(MenuBank bank, int number) const { return m_menuSets[int(bank)].value(number); }
+    void setMenu(MenuBank bank, int number, int value) { m_menuSets[int(bank)][number] = value; }
+    MenuBank menuBank() const { return m_menuBank; }
     EqLevels eqLevels(EqType type) const { return m_eqLevels[int(type)]; }
     EqCurve eqCurve(EqType type, EqMode mode) const { return m_eqCurves[int(type)][int(mode)]; }
     int afGain() const { return m_afGain; }
@@ -155,7 +159,10 @@ private:
     int m_nbLevels[3] = {0, 3, 6};   // per blanker: [1] NB1, [2] NB2
     int m_noiseReduction = 0;
     int m_nrLevels[3] = {0, 5, 2};   // [1] NR1 level, [2] NR2 speed
-    QHash<int, int> m_menus;
+    QHash<int, int> &menus() { return m_menuSets[int(m_menuBank)]; }
+    const QHash<int, int> &menus() const { return m_menuSets[int(m_menuBank)]; }
+    QHash<int, int> m_menuSets[2];   // menu A and B
+    MenuBank m_menuBank = MenuBank::A;
     EqCurve m_eqCurves[2][8] = {};
     EqLevels m_eqLevels[2];
 };

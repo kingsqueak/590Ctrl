@@ -605,6 +605,8 @@ QByteArray setMenu(int number, QByteArrayView value)
     return "EX" + digits(number, 3) + "0000" + value.toByteArray() + ';';
 }
 
+QByteArray menuBank(MenuBank bank) { return "MF" + QByteArray::number(int(bank)) + ';'; }
+
 QByteArray readEqCurve(EqType type, EqMode mode)
 {
     return "EQ" + QByteArray::number(int(type)) + QByteArray::number(int(mode)) + ';';
@@ -717,6 +719,15 @@ std::optional<MenuAnswer> parseMenu(QByteArrayView frame)
     if (!number)
         return std::nullopt;
     return MenuAnswer{int(*number), frame.sliced(9).toByteArray()};
+}
+
+std::optional<MenuBank> parseMenuBank(QByteArrayView frame)
+{
+    if (frame == "MF0")
+        return MenuBank::A;
+    if (frame == "MF1")
+        return MenuBank::B;
+    return std::nullopt;
 }
 
 }   // namespace ts590

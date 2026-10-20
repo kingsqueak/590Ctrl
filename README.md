@@ -5,7 +5,7 @@ macOS and Linux. Written in C++20 with Qt 6.
 
 ![590Ctrl connected to a TS-590SG](docs/screenshot-0.12.png)
 
-Version 0.13 · Licensed under the [GPL-3.0](LICENSE).
+Version 0.13.1 · Licensed under the [GPL-3.0](LICENSE).
 
 ## Features
 
@@ -120,9 +120,9 @@ Version 0.13 · Licensed under the [GPL-3.0](LICENSE).
 
 ## Installing on macOS
 
-Download `590Ctrl-0.13.dmg` from the
+Download `590Ctrl-0.13.1.dmg` from the
 [Releases](https://github.com/kingsqueak/590Ctrl/releases) page, open it, and
-drag **590Ctrl-0.13** to **Applications**. The app's name carries its version;
+drag **590Ctrl-0.13.1** to **Applications**. The app's name carries its version;
 delete the older copy (0.10 was plain `590Ctrl.app`) once the new
 one runs. Settings are kept. It runs on macOS 26.0 or later, on both
 Apple silicon and Intel Macs.
@@ -132,7 +132,7 @@ once, then go to **System Settings → Privacy & Security** and click **Open
 Anyway**. Alternatively, run:
 
 ```sh
-xattr -dr com.apple.quarantine /Applications/590Ctrl-0.13.app
+xattr -dr com.apple.quarantine /Applications/590Ctrl-0.13.1.app
 ```
 
 ## Building from source

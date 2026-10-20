@@ -3,7 +3,7 @@
 A desktop control panel for the **Kenwood TS-590SG** over its USB port, for
 macOS and Linux. Written in C++20 with Qt 6.
 
-![590Ctrl connected to a TS-590SG](docs/screenshot.png)
+![590Ctrl connected to a TS-590SG](docs/screenshot-0.12.png)
 
 Version 0.12 · Licensed under the [GPL-3.0](LICENSE).
 

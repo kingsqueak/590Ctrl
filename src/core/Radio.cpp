@@ -335,10 +335,15 @@ void Radio::pollMeter()
         return;
     m_link.query("SM0;");
     // SWR/COMP/ALC only mean something on transmit; one RM read returns all three.
-    if (m_transmitting)
+    if (m_transmitting) {
         m_link.query("RM;");
-    else
-        m_link.query("BY;");   // squelch open; AI doesn't report it
+        return;
+    }
+    m_link.query("BY;");   // squelch open; AI doesn't report it
+    // Nor a press of the radio's VOX key (fw 1.07); LOCK and FINE are polled
+    // the same way in case. One per tick, so each is read every few hundred ms.
+    static constexpr const char *panelKeys[] = {"VX;", "LK;", "FS;"};
+    m_link.query(panelKeys[m_panelPoll++ % std::size(panelKeys)]);
 }
 
 void Radio::pumpCw()

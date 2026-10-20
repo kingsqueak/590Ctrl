@@ -310,6 +310,7 @@ private:
     bool m_awaitingIdentity = false;   // PS1 seen, waiting for ID to start the sync
     QTimer m_bootTimer;                // polls ID while the radio powers up
     int m_bootAttempts = 0;
+    unsigned m_panelPoll = 0;          // which front-panel key pollMeter reads next
     bool m_keyed = false;              // this app sent TX and hasn't sent RX
     int m_modelId = 0;
     QString m_firmware;

@@ -807,8 +807,14 @@ void Radio::setFrequency(Vfo vfo, qint64 hz)
     if (vfo == Vfo::Memory)
         return;
     hz = std::clamp(hz, kMinFrequencyHz, kMaxFrequencyHz);
-    (vfo == Vfo::B ? m_freqB : m_freqA) = hz;
     m_link.send(cmd::frequency(vfo, hz), vfo == Vfo::B ? "FB" : "FA");
+    // The radio doesn't report CAT-made changes back, so announce it here or
+    // the display misses changes made by TCI clients.
+    qint64 &field = vfo == Vfo::B ? m_freqB : m_freqA;
+    if (field != hz) {
+        field = hz;
+        emit frequencyChanged(vfo, hz);
+    }
 }
 
 void Radio::requestVfoState()
@@ -892,10 +898,14 @@ void Radio::setRitXitOffset(int hz)
 {
     if (!m_rit && !m_xit)
         return;
-    m_ritXitOffset = std::clamp(hz, -kRitXitMaxHz, kRitXitMaxHz);
+    hz = std::clamp(hz, -kRitXitMaxHz, kRitXitMaxHz);
     // One coalescable command: dragging only ever sends the latest offset.
-    m_link.send(cmd::ritXitOffset(m_ritXitOffset), "RC");
+    m_link.send(cmd::ritXitOffset(hz), "RC");
     m_link.query("IF;");
+    if (m_ritXitOffset != hz) {
+        m_ritXitOffset = hz;
+        emit ritXitChanged();
+    }
 }
 
 void Radio::setPower(QByteArray (*encode)(int), std::optional<int> &field, int watts, int maximum)
@@ -903,10 +913,18 @@ void Radio::setPower(QByteArray (*encode)(int), std::optional<int> &field, int w
     watts = std::clamp(watts, kTxPowerMin, maximum);
     if (!m_powerFine)
         watts -= watts % 5;   // the radio rounds down to 5 W steps
-    field = watts;
     const QByteArray command = encode(watts);
     m_link.send(command, command.left(2));
     m_link.query(command.left(2) + ';');
+    // The query's answer matches what's stored, so announce a TCI client's
+    // change here or the sliders miss it.
+    if (field != watts) {
+        field = watts;
+        if (&field == &m_txPower)
+            emit txPowerChanged(watts);
+        else
+            emit tunePowerChanged(watts);
+    }
 }
 
 void Radio::setLevel(QByteArray (*encode)(int), std::optional<int> &field, int level, int maximum)

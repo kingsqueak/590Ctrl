@@ -148,16 +148,22 @@ private slots:
         Client a(server.port()), b(server.port());
         QVERIFY(a.waitReady() && b.waitReady());
 
+        QSignalSpy changed(&radio, &Radio::frequencyChanged);
         a.send(QStringLiteral("VFO:0,0,7074000;"));
         QTRY_COMPARE(sim->frequency(Vfo::A), 7'074'000);
+        // The app's own display follows a client's change too.
+        QCOMPARE(changed.count(), 1);
+        QCOMPARE(changed[0][1].toLongLong(), 7'074'000);
         QVERIFY(b.waitFor(QStringLiteral("vfo:0,0,7074000")));
 
         // A change made in this app reaches the clients too, though the
         // radio doesn't report CAT-made changes back.
         radio.setFrequency(Vfo::A, 14'074'000);
         QVERIFY(b.waitFor(QStringLiteral("vfo:0,0,14074000")));
+        QSignalSpy power(&radio, &Radio::txPowerChanged);
         radio.setTxPower(35);
         QVERIFY(b.waitFor(QStringLiteral("drive:0,35")));
+        QCOMPARE(power.count(), 1);
         radio.setFrequency(Vfo::B, 10'136'000);
         radio.selectVfo(Vfo::B);
         QVERIFY(a.waitFor(QStringLiteral("vfo:0,0,10136000")));

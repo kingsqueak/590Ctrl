@@ -17,6 +17,6 @@ int main(int argc, char *argv[])
     applySavedAppearanceAndStyle();
 
     MainWindow window;
-    window.show();
+    window.showStartupWindow();
     return app.exec();
 }

@@ -5,6 +5,7 @@
 #include "CatMonitor.h"
 #include "EqualizerPanel.h"
 #include "MenuPanel.h"
+#include "MiniWindow.h"
 #include "FrequencyDisplay.h"
 #include "SerialTransport.h"
 #include "SMeter.h"
@@ -51,6 +52,8 @@
 #include <QToolBar>
 #include <QToolButton>
 #include <QVBoxLayout>
+
+#include <tuple>
 
 using namespace ts590;
 
@@ -143,6 +146,11 @@ MainWindow::MainWindow(QWidget *parent)
     layout->addWidget(tabs, 1);
     setCentralWidget(central);
 
+    m_mini = new MiniWindow(kVfoAPointSize, this);
+    m_meters = {m_sMeter, m_mini->meter()};
+    m_radioControls << m_mini->radioControls();
+    connect(m_mini, &MiniWindow::fullModeRequested, this, [this] { setMiniMode(false); });
+
     // The macOS style's slider minimum is just the knob, so a narrow window
     // squeezed the sliders to nothing. Keep every slider usable.
     for (QSlider *slider : central->findChildren<QSlider *>()) {
@@ -159,6 +167,8 @@ MainWindow::MainWindow(QWidget *parent)
     monitorDock->hide();
     QMenu *viewMenu = menuBar()->addMenu(tr("&View"));
     viewMenu->addAction(monitorDock->toggleViewAction());
+    QAction *miniAction = viewMenu->addAction(tr("Mini Window"), this, [this] { setMiniMode(true); });
+    miniAction->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_M));
 
     // Widget style and light/dark appearance, applied live and remembered.
     QMenu *styleMenu = viewMenu->addMenu(tr("Style"));
@@ -223,22 +233,25 @@ MainWindow::MainWindow(QWidget *parent)
     });
     connect(&m_radio, &Radio::frequencyChanged, this, [this](Vfo vfo, qint64 hz) {
         (vfo == Vfo::B ? m_vfoB : m_vfoA)->setFrequency(hz);
+        (vfo == Vfo::B ? m_mini->vfoB() : m_mini->vfoA())->setFrequency(hz);
         refreshBand();
     });
     connect(&m_radio, &Radio::vfoSelectionChanged, this, &MainWindow::onVfoSelectionChanged);
     connect(&m_radio, &Radio::vfoSelectionChanged, this, &MainWindow::refreshBand);
     connect(&m_radio, &Radio::processorChanged, this, &MainWindow::refreshProcessor);
     connect(&m_radio, &Radio::modeChanged, this, &MainWindow::onModeChanged);
-    connect(&m_radio, &Radio::sMeterChanged, m_sMeter, &SMeter::setValue);
-    // Follows the slider, so the marker moves while dragging too.
-    connect(m_rfSlider, &QSlider::valueChanged, m_sMeter, &SMeter::setRfGain);
-    connect(&m_radio, &Radio::txMetersChanged, this, [this] {
-        m_sMeter->setTxMeters(m_radio.txMeter(TxMeter::Swr), m_radio.txMeter(TxMeter::Comp),
-                              m_radio.txMeter(TxMeter::Alc));
-    });
+    for (SMeter *meter : std::as_const(m_meters)) {
+        connect(&m_radio, &Radio::sMeterChanged, meter, &SMeter::setValue);
+        // Follows the slider, so the marker moves while dragging too.
+        connect(m_rfSlider, &QSlider::valueChanged, meter, &SMeter::setRfGain);
+        connect(&m_radio, &Radio::txMetersChanged, meter, [this, meter] {
+            meter->setTxMeters(m_radio.txMeter(TxMeter::Swr), m_radio.txMeter(TxMeter::Comp),
+                               m_radio.txMeter(TxMeter::Alc));
+        });
+        connect(&m_radio, &Radio::transmitChanged, meter, &SMeter::setTransmitting);
+    }
     connect(&m_radio, &Radio::transmitChanged, this, [this](bool tx) {
         m_txIndicator->setEnabled(tx);
-        m_sMeter->setTransmitting(tx);
         // Back on receive for any reason (TX released, time-out timer,
         // refused): SEND is no longer latched.
         if (!tx) {
@@ -323,6 +336,20 @@ MainWindow::MainWindow(QWidget *parent)
             [this](qint64 hz) { m_radio.setFrequency(Vfo::A, hz); });
     connect(m_vfoB, &FrequencyDisplay::frequencyRequested, this,
             [this](qint64 hz) { m_radio.setFrequency(Vfo::B, hz); });
+
+    // ---- mini window -> radio, the same as the full window's controls
+    connect(m_mini->vfoA(), &FrequencyDisplay::frequencyRequested, this,
+            [this](qint64 hz) { m_radio.setFrequency(Vfo::A, hz); });
+    connect(m_mini->vfoB(), &FrequencyDisplay::frequencyRequested, this,
+            [this](qint64 hz) { m_radio.setFrequency(Vfo::B, hz); });
+    connect(m_mini->vfoButtons(), &QButtonGroup::idClicked, this, [this](int id) { m_radio.selectVfo(Vfo(id)); });
+    connect(m_mini->copyButton(), &QPushButton::clicked, &m_radio, &Radio::copyVfo);
+    connect(m_mini->muteButton(), &QPushButton::clicked, this, [this](bool on) {
+        m_radio.setMute(on);
+        refreshPanelToggles();
+    });
+    connect(m_mini->txButton(), &QPushButton::pressed, this, [this] { m_radio.setTransmit(true); });
+    connect(m_mini->txButton(), &QPushButton::released, this, [this] { m_radio.setTransmit(false); });
     for (EqualizerPanel *panel : {m_rxEq, m_txEq}) {
         const EqType type = panel == m_rxEq ? EqType::Rx : EqType::Tx;
         connect(panel, &EqualizerPanel::curveSelected, this,
@@ -407,17 +434,61 @@ MainWindow::MainWindow(QWidget *parent)
     QSettings settings;
     restoreGeometry(settings.value(QStringLiteral("window/geometry")).toByteArray());
     restoreState(settings.value(QStringLiteral("window/state")).toByteArray());
+    m_mini->restoreGeometry(settings.value(QStringLiteral("mini/geometry")).toByteArray());
+    m_mini->setPinned(settings.value(QStringLiteral("mini/pinned"), true).toBool());
     onStateChanged(Radio::State::Disconnected);
+
+    // Quitting from the mini window (Cmd+Q) never closes the hidden full
+    // window, so release the radio and save on the way out as well.
+    qApp->installEventFilter(this);
+    connect(qApp, &QCoreApplication::aboutToQuit, this, &MainWindow::shutDown);
+}
+
+void MainWindow::showStartupWindow()
+{
+    if (QSettings().value(QStringLiteral("window/mini"), false).toBool())
+        setMiniMode(true);
+    else
+        show();
+}
+
+void MainWindow::setMiniMode(bool mini)
+{
+    m_miniMode = mini;
+    QWidget *shown = mini ? static_cast<QWidget *>(m_mini) : this;
+    QWidget *hidden = mini ? static_cast<QWidget *>(this) : m_mini;
+    // Show one before hiding the other, so there's always a window open.
+    shown->show();
+    shown->raise();
+    shown->activateWindow();
+    hidden->hide();
+}
+
+bool MainWindow::eventFilter(QObject *watched, QEvent *event)
+{
+    if (event->type() == QEvent::Quit)
+        m_mini->setQuitting(true);
+    return QMainWindow::eventFilter(watched, event);
 }
 
 void MainWindow::closeEvent(QCloseEvent *event)
 {
+    shutDown();
+    event->accept();
+}
+
+void MainWindow::shutDown()
+{
+    if (std::exchange(m_shutDown, true))
+        return;
     m_tci.close();   // releases transmit if a TCI client keyed it
     m_radio.disconnectFromRadio();
     QSettings settings;
     settings.setValue(QStringLiteral("window/geometry"), saveGeometry());
     settings.setValue(QStringLiteral("window/state"), saveState());
-    event->accept();
+    settings.setValue(QStringLiteral("window/mini"), m_miniMode);
+    settings.setValue(QStringLiteral("mini/geometry"), m_mini->saveGeometry());
+    settings.setValue(QStringLiteral("mini/pinned"), m_mini->isPinned());
 }
 
 // ------------------------------------------------------------------ builders
@@ -458,6 +529,13 @@ QWidget *MainWindow::createConnectionBar()
     layout->addWidget(m_connectButton);
     layout->addSpacing(6);
     layout->addWidget(m_powerButton);
+
+    auto *miniButton = new QToolButton;
+    miniButton->setText(tr("Mini"));
+    miniButton->setToolTip(tr("Mini window (%1)").arg(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_M)
+                                                           .toString(QKeySequence::NativeText)));
+    connect(miniButton, &QToolButton::clicked, this, [this] { setMiniMode(true); });
+    layout->addWidget(miniButton);
     layout->addStretch();
 
     refreshPorts();
@@ -1155,9 +1233,13 @@ QWidget *MainWindow::createTransmitGroup()
     connect(m_txButton, &QPushButton::released, this, [this] { m_radio.setTransmit(false); });
     // A held button can miss its release if the app loses focus mid-press.
     connect(qApp, &QGuiApplication::applicationStateChanged, this, [this](Qt::ApplicationState appState) {
-        if (appState != Qt::ApplicationActive && m_txButton->isDown()) {
-            m_txButton->setDown(false);
-            m_radio.setTransmit(false);
+        if (appState == Qt::ApplicationActive)
+            return;
+        for (QPushButton *button : {m_txButton, m_mini->txButton()}) {
+            if (button->isDown()) {
+                button->setDown(false);
+                m_radio.setTransmit(false);
+            }
         }
     });
     m_radioControls << m_voxButton << m_sendButton << m_tuneCarrierButton << m_txButton;
@@ -1576,7 +1658,8 @@ void MainWindow::onStateChanged(Radio::State state)
     case Radio::State::Disconnected:
     case Radio::State::PoweredOff:
         m_radioInfo->setText(state == Radio::State::PoweredOff ? tr("Radio is switched off") : tr("Disconnected"));
-        m_sMeter->reset();
+        for (SMeter *meter : std::as_const(m_meters))
+            meter->reset();
         m_txIndicator->setEnabled(false);
         onVfoSelectionChanged(Vfo::A, Vfo::A);
         refreshRitXit();
@@ -1597,7 +1680,8 @@ void MainWindow::onStateChanged(Radio::State state)
     case Radio::State::Connecting: m_radioInfo->setText(tr("Connecting…")); break;
     case Radio::State::Connected:
         // The slider may already hold this value, so it won't signal a change.
-        m_sMeter->setRfGain(m_rfSlider->value());
+        for (SMeter *meter : std::as_const(m_meters))
+            meter->setRfGain(m_rfSlider->value());
         onModeChanged(m_radio.mode(), m_radio.dataMode());
         onVfoSelectionChanged(m_radio.rxVfo(), m_radio.txVfo());
         refreshRitXit();
@@ -1660,16 +1744,18 @@ void MainWindow::onVfoSelectionChanged(Vfo rx, Vfo tx)
             return tr("RX/TX");
         return rx == vfo ? tr("RX") : tx == vfo ? tr("TX") : QString();
     };
-    m_vfoA->setRole(role(Vfo::A));
-    m_vfoB->setRole(role(Vfo::B));
-
-    if (QAbstractButton *button = connected ? m_vfoButtons->button(int(rx)) : nullptr) {
-        button->setChecked(true);
-    } else if (QAbstractButton *checked = m_vfoButtons->checkedButton()) {
-        // Memory mode or disconnected: neither VFO is selected.
-        m_vfoButtons->setExclusive(false);
-        checked->setChecked(false);
-        m_vfoButtons->setExclusive(true);
+    for (auto [a, b, buttons] : {std::tuple{m_vfoA, m_vfoB, m_vfoButtons},
+                                 std::tuple{m_mini->vfoA(), m_mini->vfoB(), m_mini->vfoButtons()}}) {
+        a->setRole(role(Vfo::A));
+        b->setRole(role(Vfo::B));
+        if (QAbstractButton *button = connected ? buttons->button(int(rx)) : nullptr) {
+            button->setChecked(true);
+        } else if (QAbstractButton *checked = buttons->checkedButton()) {
+            // Memory mode or disconnected: neither VFO is selected.
+            buttons->setExclusive(false);
+            checked->setChecked(false);
+            buttons->setExclusive(true);
+        }
     }
     m_splitButton->setChecked(connected && rx != tx && rx != Vfo::Memory);
     m_vfoStatus->setText(connected && rx == Vfo::Memory ? tr("Memory channel") : QString());
@@ -1871,6 +1957,7 @@ void MainWindow::refreshPanelToggles()
     const bool connected = m_radio.state() == Radio::State::Connected;
     m_lockButton->setChecked(connected && m_radio.locked());
     m_muteButton->setChecked(connected && m_radio.muted());
+    m_mini->muteButton()->setChecked(m_muteButton->isChecked());
     m_fineButton->setChecked(connected && m_radio.fineTuning());
 }
 
@@ -1878,8 +1965,9 @@ void MainWindow::refreshSquelchOpen()
 {
     // With the squelch at 0 it's always open; only show it when it's doing
     // something.
-    m_sMeter->setSquelchOpen(m_radio.state() == Radio::State::Connected && m_sqlSlider->value() > 0
-                             && m_radio.busy());
+    const bool open = m_radio.state() == Radio::State::Connected && m_sqlSlider->value() > 0 && m_radio.busy();
+    for (SMeter *meter : std::as_const(m_meters))
+        meter->setSquelchOpen(open);
 }
 
 void MainWindow::refreshKeyer()

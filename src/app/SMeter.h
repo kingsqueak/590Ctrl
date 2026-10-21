@@ -33,6 +33,8 @@ public:
     // Green "SQL" over the readout: the squelch is set and open.
     void setSquelchOpen(bool open);
     void reset();
+    // Shrinks fonts, bars and size limits together; 1.0 is the full window.
+    void setScale(double scale);
 
     QSize sizeHint() const override;
     QSize minimumSizeHint() const override;
@@ -45,10 +47,14 @@ private:
     void paintTransmit(QPainter &p, const QRect &area);
     QColor zoneColor(int dots) const;   // receive zone color at a reading
     int peakTextWidth() const;
+    int scaled(int pixels) const;
 
     QFont m_peakFont;
     QFont m_scaleFont;
     QFont m_txLabelFont;
+    double m_scale = 1.0;
+    double m_peakPointSize;
+    double m_scalePointSize;
     int m_value = 0;
     double m_shown = 0;   // animated position of the main bar, in dots
     QVariantAnimation m_animation;

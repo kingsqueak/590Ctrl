@@ -23,6 +23,8 @@ public:
     void setLabel(const QString &label);
     // Small tag under the label, e.g. "RX", "TX", "RX/TX".
     void setRole(const QString &role);
+    // Digit size; the mini window rescales with its window.
+    void setPointSize(int pointSize);
 
     QSize sizeHint() const override;
     QSize minimumSizeHint() const override { return sizeHint(); }

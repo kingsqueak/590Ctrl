@@ -6,6 +6,8 @@
 #include <QLinearGradient>
 #include <QPainter>
 
+#include <cmath>
+
 using namespace ts590;
 
 namespace {
@@ -104,9 +106,11 @@ SMeter::SMeter(int peakPointSize, QWidget *parent)
     , m_scaleFont(font())
     , m_txLabelFont(font())
 {
+    m_peakPointSize = peakPointSize;
+    m_scalePointSize = font().pointSizeF() * 0.85;
     m_peakFont.setPointSize(peakPointSize);
     m_peakFont.setBold(true);
-    m_scaleFont.setPointSizeF(font().pointSizeF() * 0.85);
+    m_scaleFont.setPointSizeF(m_scalePointSize);
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     setMaximumHeight(kMaxHeight);
     setToolTip(tr("Signal strength with peak hold; the yellow marker shows the RF gain setting. "
@@ -195,6 +199,23 @@ void SMeter::reset()
     update();
 }
 
+void SMeter::setScale(double scale)
+{
+    if (std::abs(scale - m_scale) < 0.005)
+        return;
+    m_scale = scale;
+    m_peakFont.setPointSizeF(std::max(7.0, m_peakPointSize * scale));
+    m_scaleFont.setPointSizeF(std::max(6.0, m_scalePointSize * scale));
+    setMaximumHeight(scaled(kMaxHeight));
+    updateGeometry();
+    update();
+}
+
+int SMeter::scaled(int pixels) const
+{
+    return std::max(1, int(std::lround(pixels * m_scale)));
+}
+
 int SMeter::peakTextWidth() const
 {
     return QFontMetrics(m_peakFont).horizontalAdvance(QStringLiteral("S9+60"));
@@ -202,14 +223,14 @@ int SMeter::peakTextWidth() const
 
 QSize SMeter::sizeHint() const
 {
-    return {400, kPreferredHeight};
+    return {scaled(400), scaled(kPreferredHeight)};
 }
 
 QSize SMeter::minimumSizeHint() const
 {
     // Both modes lay out in whatever height there is, so key-up never
     // changes the widget's size.
-    return {200 + peakTextWidth(), std::max(kMinHeight, QFontMetrics(m_peakFont).height())};
+    return {scaled(200) + peakTextWidth(), std::max(scaled(kMinHeight), QFontMetrics(m_peakFont).height())};
 }
 
 QColor SMeter::zoneColor(int dots) const
@@ -228,7 +249,7 @@ void SMeter::paintEvent(QPaintEvent *)
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
     const int peakWidth = peakTextWidth();
-    const QRect area(0, 0, width() - peakWidth - kSpacing, height());
+    const QRect area(0, 0, width() - peakWidth - scaled(kSpacing), height());
     if (m_transmitting)
         paintTransmit(p, area);
     else
@@ -258,7 +279,7 @@ void SMeter::paintReceive(QPainter &p, const QRect &area)
 {
     // Bar with the scale under it, centered vertically as a block.
     const QFontMetrics metrics(m_scaleFont);
-    const int barHeight = std::min(kMaxRxBarHeight, area.height() - metrics.height() - 6);
+    const int barHeight = std::max(2, std::min(scaled(kMaxRxBarHeight), area.height() - metrics.height() - 6));
     const int blockTop = (area.height() - barHeight - 3 - metrics.height()) / 2;
     const QRectF bar(area.left(), blockTop, area.width(), barHeight);
 
@@ -303,12 +324,12 @@ void SMeter::paintTransmit(QPainter &p, const QRect &area)
     // Power bar on top, then three thin lines, sized from the height and
     // centered vertically as a block.
     const int available = area.height() - 4;
-    const int lineHeight = std::max(4, available * 12 / 100);
-    const int lineGap = std::max(3, available * 6 / 100);
-    const int barHeight = std::min(kMaxTxBarHeight, available - 3 * lineHeight - 3 * lineGap);
+    const int lineHeight = std::max(scaled(4), available * 12 / 100);
+    const int lineGap = std::max(scaled(3), available * 6 / 100);
+    const int barHeight = std::max(2, std::min(scaled(kMaxTxBarHeight), available - 3 * lineHeight - 3 * lineGap));
     const int blockHeight = barHeight + 3 * (lineGap + lineHeight);
     // No taller than a row pitch, so the four labels never touch.
-    m_txLabelFont.setPixelSize(std::clamp(lineHeight + lineGap, 8, 11));
+    m_txLabelFont.setPixelSize(std::clamp(lineHeight + lineGap, std::max(6, scaled(8)), 11));
     const QFontMetrics metrics(m_txLabelFont);
     const int labelWidth = metrics.horizontalAdvance(QStringLiteral("SWR 3.0")) + 6;
     // Value column at the right end of the lines (COMP in dB).

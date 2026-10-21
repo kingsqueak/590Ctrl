@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(590Ctrl VERSION 0.13.1 DESCRIPTION "Kenwood TS-590SG control" LANGUAGES CXX)
+project(590Ctrl VERSION 0.14 DESCRIPTION "Kenwood TS-590SG control" LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -43,6 +43,7 @@ qt_add_executable(590Ctrl
     src/app/CatMonitor.h src/app/CatMonitor.cpp
     src/app/WheelSteps.h
     src/app/SMeter.h src/app/SMeter.cpp
+    src/app/MiniWindow.h src/app/MiniWindow.cpp
     src/app/PowerButton.h src/app/PowerButton.cpp
     src/app/AppStyle.h src/app/AppStyle.cpp
     resources/590Ctrl.icns

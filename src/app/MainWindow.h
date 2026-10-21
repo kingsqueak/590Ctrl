@@ -27,6 +27,7 @@ class QPlainTextEdit;
 class QTableWidget;
 class EqualizerPanel;
 class FrequencyDisplay;
+class MiniWindow;
 class PowerButton;
 class SMeter;
 
@@ -37,8 +38,12 @@ class MainWindow : public QMainWindow
 public:
     explicit MainWindow(QWidget *parent = nullptr);
 
+    // The full or the mini window, whichever was in use at the last quit.
+    void showStartupWindow();
+
 protected:
     void closeEvent(QCloseEvent *event) override;
+    bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
     QWidget *createConnectionBar();
@@ -63,6 +68,8 @@ private:
     void onStateChanged(ts590::Radio::State state);
     void onModeChanged(ts590::Mode mode, bool data);
     void onVfoSelectionChanged(ts590::Vfo rx, ts590::Vfo tx);
+    void setMiniMode(bool mini);
+    void shutDown();   // once, on close or quit: release the radio, save the windows
     void refreshFilters();
     void refreshRitXit();
     void refreshNotch();
@@ -113,6 +120,11 @@ private:
     QPushButton *m_splitButton = nullptr;
     QLabel *m_txIndicator = nullptr;
     SMeter *m_sMeter = nullptr;
+    QList<SMeter *> m_meters;   // the full and mini windows' meters
+
+    MiniWindow *m_mini = nullptr;
+    bool m_miniMode = false;
+    bool m_shutDown = false;
 
     QButtonGroup *m_modeButtons = nullptr;
     QCheckBox *m_dataCheck = nullptr;

@@ -76,6 +76,17 @@ void FrequencyDisplay::setLabel(const QString &label)
     update();
 }
 
+void FrequencyDisplay::setPointSize(int pointSize)
+{
+    if (pointSize == m_font.pointSize())
+        return;
+    m_font.setPointSize(pointSize);
+    if (m_editor)
+        m_editor->setFont(m_font);
+    updateGeometry();
+    update();
+}
+
 void FrequencyDisplay::setFrequency(qint64 hz)
 {
     if (m_holdTimer.isActive()) {

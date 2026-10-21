@@ -1,0 +1,60 @@
+name: Packages
+
+# Builds the macOS DMG and the Ubuntu 26.04 packages for amd64 and arm64.
+# Runs on a version tag (v*) or by hand; the packages are the run's artifacts.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deb:
+    strategy:
+      matrix:
+        runner: [ubuntu-26.04, ubuntu-26.04-arm]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the Qt 6 build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build pkg-config dpkg-dev file \
+            qt6-base-dev qt6-serialport-dev qt6-websockets-dev qt6-multimedia-dev
+
+      - name: Test and build the package
+        run: ./scripts/make-deb.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: 590ctrl-deb-${{ runner.arch }}
+          path: dist/*.deb
+          if-no-files-found: error
+
+  dmg:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      # The official Qt, as for a local release: Homebrew's can't target the
+      # minimum macOS.
+      - name: Install Qt 6.12.0
+        run: |
+          python3 -m venv "$RUNNER_TEMP/aqt"
+          "$RUNNER_TEMP/aqt/bin/pip" install --quiet aqtinstall
+          "$RUNNER_TEMP/aqt/bin/aqt" install-qt mac desktop 6.12.0 clang_64 \
+            -m qtserialport qtwebsockets qtmultimedia -O "$RUNNER_TEMP/Qt"
+          command -v ninja || brew install ninja
+
+      - name: Build the DMG
+        run: ./scripts/make-dmg.sh "$RUNNER_TEMP/Qt/6.12.0/macos"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: 590ctrl-dmg
+          path: build-release/*.dmg
+          if-no-files-found: error

@@ -127,6 +127,24 @@ button)
 - **View → Style** (macOS, Fusion, …) and **View → Appearance** (System, Light,
   Dark)
 
+## Installing on Linux and Windows
+
+Each release has packages for x86-64 and arm64 Linux, and a Windows zip for x64.
+
+```sh
+sudo apt install ./590ctrl_*.deb        # Ubuntu 26.04
+sudo dnf install ./590ctrl-*.rpm        # Fedora
+sudo pacman -U ./590ctrl-*.pkg.tar.zst  # Arch
+```
+
+On Linux, add yourself to the `dialout` group (`uucp` on Arch) so the app can open the radio's
+serial port, then log in again. The RPM and Arch packages include their own Qt.
+
+On Windows 10 or 11, unzip it somewhere and run `bin\590Ctrl.exe`; nothing needs installing. At
+the SmartScreen warning choose More info, then Run anyway. The radio's USB port needs the Silicon
+Labs CP210x driver, and shows up as a COM port. The Windows build hasn't been tried with a radio
+yet, so please report what you find.
+
 ## Installing on macOS
 
 Download `590Ctrl-0.14.dmg` from the

@@ -52,7 +52,7 @@ common() {
 mkdir -p dist
 rm -f dist/*.rpm dist/*.pkg.tar.zst
 common -t rpm -p "dist/590ctrl-${VERSION}-1.${ARCH}.rpm" \
-    -d glibc -d libstdc++ -d libgcc -d libglvnd-egl -d libglvnd-opengl -d libxkbcommon-x11 -d fontconfig \
+    -d glibc -d libstdc++ -d libgcc -d libglvnd-glx -d libglvnd-egl -d libglvnd-opengl -d libxkbcommon-x11 -d fontconfig \
     -d freetype -d dbus-libs -d xcb-util-cursor -d xcb-util-wm -d xcb-util-image -d xcb-util-keysyms \
     -d xcb-util-renderutil -d pulseaudio-libs
 common -t pacman -p "dist/590ctrl-${VERSION}-1-${ARCH}.pkg.tar.zst" \

@@ -45,7 +45,7 @@ EOF
 cat > "$STAGE/usr/share/doc/590ctrl/copyright" << 'EOF'
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: 590Ctrl
-Upstream-Contact: KC2RGW Chris <kc2rgw@gmail.com>
+Upstream-Contact: KC2RGW Chris <kc2rgw@radiopathology.com>
 Source: https://github.com/kingsqueak/590Ctrl
 
 Files: *
@@ -71,7 +71,7 @@ gzip -n -9 -c > "$STAGE/usr/share/doc/590ctrl/changelog.Debian.gz" << EOF
 
   * Binary package of 590Ctrl ${VERSION}.
 
- -- KC2RGW Chris <kc2rgw@gmail.com>  $(date -R)
+ -- KC2RGW Chris <kc2rgw@radiopathology.com>  $(date -R)
 EOF
 
 find "$STAGE" -type d -exec chmod 0755 {} +
@@ -94,7 +94,7 @@ Version: ${VERSION}-1
 Section: hamradio
 Priority: optional
 Architecture: ${ARCH}
-Maintainer: KC2RGW Chris <kc2rgw@gmail.com>
+Maintainer: KC2RGW Chris <kc2rgw@radiopathology.com>
 Homepage: https://github.com/kingsqueak/590Ctrl
 Installed-Size: ${SIZE}
 Depends: ${DEPS}

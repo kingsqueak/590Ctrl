@@ -1,7 +1,7 @@
 # 590Ctrl
 
 A desktop control panel for the **Kenwood TS-590SG** over its USB port, for
-macOS and Linux. Written in C++20 with Qt 6.
+macOS, Linux and Windows. Written in C++20 with Qt 6.
 
 ![590Ctrl connected to a TS-590SG](docs/screenshot-0.12.png)
 

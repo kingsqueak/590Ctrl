@@ -17,6 +17,10 @@ stage="build-win/stage/590Ctrl-$version"
 rm -rf build-win/stage
 cmake --install build-win --config Release --prefix "$stage"
 cp LICENSE "$stage/"
+# A fresh Windows may not have the Visual C++ runtime; Microsoft allows shipping it.
+for dll in vcruntime140.dll vcruntime140_1.dll msvcp140.dll; do
+  [ -e "$stage/bin/$dll" ] || cp "/c/Windows/System32/$dll" "$stage/bin/"
+done
 mkdir -p dist
 out="$PWD/dist/590Ctrl-$version-win-x64.zip"
 rm -f "$out"

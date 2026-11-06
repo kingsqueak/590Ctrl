@@ -54,7 +54,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends build-essential cmake ninja-build pkg-config \
             libgl-dev libegl-dev libxkbcommon-dev libfontconfig-dev libfreetype-dev libdbus-1-dev \
-            libxcb-cursor0 ruby rpm libarchive-tools zstd patchelf
+            libxcb-cursor0 libpulse0 libpulse-mainloop-glib0 ruby rpm libarchive-tools zstd patchelf
           sudo gem install --no-document fpm
           python3 -m venv "$RUNNER_TEMP/aqt"
           "$RUNNER_TEMP/aqt/bin/pip" install --quiet aqtinstall
@@ -88,17 +88,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Qt 6.12.0
+      # aqt can't yet find Qt 6.12's Windows files, which moved on Qt's server.
+      - name: Install Qt 6.11.3
         shell: bash
         run: |
           python -m venv "$RUNNER_TEMP/aqt"
           "$RUNNER_TEMP/aqt/Scripts/pip" install --quiet aqtinstall
-          "$RUNNER_TEMP/aqt/Scripts/aqt" install-qt windows desktop 6.12.0 win64_msvc2022_64 \
+          "$RUNNER_TEMP/aqt/Scripts/aqt" install-qt windows desktop 6.11.3 win64_msvc2022_64 \
             -m qtserialport qtwebsockets qtmultimedia -O "$RUNNER_TEMP/Qt"
 
       - name: Test and build the zip
         shell: bash
-        run: ./scripts/make-windows.sh "$(cygpath -m "$RUNNER_TEMP/Qt/6.12.0/msvc2022_64")"
+        run: ./scripts/make-windows.sh "$(cygpath -m "$RUNNER_TEMP/Qt/6.11.3/msvc2022_64")"
 
       - uses: actions/upload-artifact@v4
         with:

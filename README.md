@@ -168,11 +168,11 @@ Packages for Ubuntu 26.04 LTS are on the
 [Releases](https://github.com/kingsqueak/590Ctrl/releases) page. They use
 that release's Qt 6, which apt installs with the package.
 
-- `590ctrl_0.14-1_amd64.deb` for Intel and AMD PCs
-- `590ctrl_0.14-1_arm64.deb` for arm64
+- `590ctrl_0.15-1_amd64.deb` for Intel and AMD PCs
+- `590ctrl_0.15-1_arm64.deb` for arm64
 
 ```sh
-sudo apt install ./590ctrl_0.14-1_amd64.deb
+sudo apt install ./590ctrl_0.15-1_amd64.deb
 ```
 
 The account that operates the radio needs to be in the `dialout` group.

@@ -1,6 +1,7 @@
 name: Packages
 
-# Builds the macOS DMG and the Ubuntu 26.04 packages for amd64 and arm64.
+# Builds the universal macOS DMG, deb, RPM and Arch packages for x86-64 and arm64,
+# and the Windows zip.
 # Runs on a version tag (v*) or by hand; the packages are the run's artifacts.
 on:
   push:
@@ -34,6 +35,88 @@ jobs:
           name: 590ctrl-deb-${{ runner.arch }}
           path: dist/*.deb
           if-no-files-found: error
+
+  # The deb uses Ubuntu's Qt. These carry the official Qt, and are built on an
+  # older Ubuntu so they run on distributions with an older glibc.
+  linux:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-24.04, host: linux, qt: linux_gcc_64, dir: gcc_64, docker: true }
+          - { runner: ubuntu-24.04-arm, host: linux_arm64, qt: linux_gcc_arm64, dir: gcc_arm64, docker: false }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt 6.12.0 and the packaging tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential cmake ninja-build pkg-config \
+            libgl-dev libegl-dev libxkbcommon-dev libfontconfig-dev libfreetype-dev libdbus-1-dev \
+            libxcb-cursor0 ruby rpm libarchive-tools zstd patchelf
+          sudo gem install --no-document fpm
+          python3 -m venv "$RUNNER_TEMP/aqt"
+          "$RUNNER_TEMP/aqt/bin/pip" install --quiet aqtinstall
+          "$RUNNER_TEMP/aqt/bin/aqt" install-qt ${{ matrix.host }} desktop 6.12.0 ${{ matrix.qt }} \
+            -m qtserialport qtwebsockets qtmultimedia -O "$RUNNER_TEMP/Qt"
+
+      - name: Build the packages
+        run: ./scripts/make-linux.sh "$RUNNER_TEMP/Qt/6.12.0/${{ matrix.dir }}"
+
+      - name: Install and start them on Fedora and Arch
+        if: ${{ matrix.docker }}
+        run: |
+          docker run --rm -v "$PWD/dist:/dist:ro" fedora:latest sh -ec '
+            dnf install -y -q /dist/*.rpm
+            set +e; QT_QPA_PLATFORM=offscreen timeout 8 /usr/bin/590Ctrl; test $? = 124'
+          docker run --rm -v "$PWD/dist:/dist:ro" archlinux:base sh -ec '
+            pacman -Syu --noconfirm -q > /dev/null
+            pacman -U --noconfirm /dist/*.pkg.tar.zst > /dev/null
+            set +e; QT_QPA_PLATFORM=offscreen timeout 8 /usr/bin/590Ctrl; test $? = 124'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: 590ctrl-linux-${{ runner.arch }}
+          path: |
+            dist/*.rpm
+            dist/*.pkg.tar.zst
+          if-no-files-found: error
+
+  windows:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt 6.12.0
+        shell: bash
+        run: |
+          python -m venv "$RUNNER_TEMP/aqt"
+          "$RUNNER_TEMP/aqt/Scripts/pip" install --quiet aqtinstall
+          "$RUNNER_TEMP/aqt/Scripts/aqt" install-qt windows desktop 6.12.0 win64_msvc2022_64 \
+            -m qtserialport qtwebsockets qtmultimedia -O "$RUNNER_TEMP/Qt"
+
+      - name: Test and build the zip
+        shell: bash
+        run: ./scripts/make-windows.sh "$(cygpath -m "$RUNNER_TEMP/Qt/6.12.0/msvc2022_64")"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: 590ctrl-windows-x64
+          path: dist/*.zip
+          if-no-files-found: error
+
+      - name: Start it
+        shell: pwsh
+        run: |
+          $dir = (Get-Item build-win/stage/590Ctrl-*).FullName
+          ./scripts/smoke-windows.ps1 $dir "$pwd/windows-screenshot.png"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-screenshot
+          path: windows-screenshot.png
 
   dmg:
     runs-on: macos-26

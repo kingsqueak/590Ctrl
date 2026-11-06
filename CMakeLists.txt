@@ -65,6 +65,12 @@ set_target_properties(590Ctrl PROPERTIES
     MACOSX_BUNDLE_COPYRIGHT "Copyright (C) 2026 KC2RGW Chris Esser"
 )
 
+# For the self-contained Linux packages and the Windows zip: `cmake --install`
+# copies the Qt libraries and plugins in beside the program.
+install(TARGETS 590Ctrl BUNDLE DESTINATION . RUNTIME DESTINATION bin)
+qt_generate_deploy_app_script(TARGET 590Ctrl OUTPUT_SCRIPT deploy_script NO_UNSUPPORTED_PLATFORM_ERROR)
+install(SCRIPT ${deploy_script})
+
 if(BUILD_TESTING)
     foreach(test tst_catcodec tst_catlink tst_radio tst_eqpresets tst_qrz tst_tciserver tst_resampler)
         qt_add_executable(${test} tests/${test}.cpp)

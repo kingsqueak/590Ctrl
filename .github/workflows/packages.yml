@@ -68,12 +68,13 @@ jobs:
         if: ${{ matrix.docker }}
         run: |
           docker run --rm -v "$PWD/dist:/dist:ro" fedora:latest sh -ec '
-            dnf install -y -q /dist/*.rpm
-            set +e; QT_QPA_PLATFORM=offscreen timeout 8 /usr/bin/590Ctrl; test $? = 124'
+            dnf install -y -q xorg-x11-server-Xvfb xorg-x11-xauth /dist/*.rpm
+            set +e; timeout 10 xvfb-run -a /usr/bin/590Ctrl; test $? = 124'
           docker run --rm -v "$PWD/dist:/dist:ro" archlinux:base sh -ec '
             pacman -Syu --noconfirm -q > /dev/null
+            pacman -S --noconfirm -q xorg-server-xvfb xorg-xauth > /dev/null
             pacman -U --noconfirm /dist/*.pkg.tar.zst > /dev/null
-            set +e; QT_QPA_PLATFORM=offscreen timeout 8 /usr/bin/590Ctrl; test $? = 124'
+            set +e; timeout 10 xvfb-run -a /usr/bin/590Ctrl; test $? = 124'
 
       - uses: actions/upload-artifact@v4
         with:

@@ -15,7 +15,8 @@ PATH="$(cygpath "$qt")/bin:$PATH" QT_QPA_PLATFORM=offscreen ctest --test-dir bui
 
 stage="build-win/stage/590Ctrl-$version"
 rm -rf build-win/stage
-cmake --install build-win --config Release --prefix "$stage"
+# Qt's deploy step needs an absolute path.
+cmake --install build-win --config Release --prefix "$(cygpath -m "$PWD/$stage")"
 cp LICENSE "$stage/"
 # A fresh Windows may not have the Visual C++ runtime; Microsoft allows shipping it.
 for dll in vcruntime140.dll vcruntime140_1.dll msvcp140.dll; do

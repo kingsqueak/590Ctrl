@@ -7,6 +7,7 @@
 #include "Radio.h"
 #include "RadioAudio.h"
 #include "TciServer.h"
+#include "UpdateChecker.h"
 
 #include <QMainWindow>
 #include <QTimer>
@@ -98,6 +99,8 @@ private:
     void refreshEq(ts590::EqType type);
     void showMessage(const QString &text);
     void showAbout();
+    void checkForUpdates(bool userAsked);
+    void onUpdateChecked(bool ok, const QString &version, const QString &page);
     void startTciServer();   // from the saved settings
     void editTciServer();
     void refreshTciStatus();
@@ -233,5 +236,13 @@ private:
     ts590::RadioAudio m_radioAudio;   // before m_tci, which uses it
     ts590::TciServer m_tci{&m_radio};
     QLabel *m_tciStatus = nullptr;
+
+    // Update note to the right of the Mini button: a link to the newer
+    // release and a close button that hides it until the next version.
+    ts590::UpdateChecker m_updates;
+    QWidget *m_updateBanner = nullptr;
+    QLabel *m_updateLabel = nullptr;
+    QString m_updateVersion;
+    bool m_updateUserAsked = false;
     QList<QWidget *> m_radioControls;   // enabled only while connected
 };

@@ -54,6 +54,7 @@
 #include <QVBoxLayout>
 
 #include <tuple>
+#include <utility>
 
 using namespace ts590;
 
@@ -208,6 +209,9 @@ MainWindow::MainWindow(QWidget *parent)
     aboutAction->setMenuRole(QAction::AboutRole);
     QAction *aboutQtAction = helpMenu->addAction(tr("About Qt"), qApp, &QApplication::aboutQt);
     aboutQtAction->setMenuRole(QAction::AboutQtRole);
+    // ApplicationSpecificRole puts it in the application menu on macOS, below About.
+    QAction *updateAction = helpMenu->addAction(tr("Check for Updates…"), this, [this] { checkForUpdates(true); });
+    updateAction->setMenuRole(QAction::ApplicationSpecificRole);
 
     m_radioInfo = new QLabel;
     statusBar()->addPermanentWidget(m_radioInfo);
@@ -442,6 +446,9 @@ MainWindow::MainWindow(QWidget *parent)
     // window, so release the radio and save on the way out as well.
     qApp->installEventFilter(this);
     connect(qApp, &QCoreApplication::aboutToQuit, this, &MainWindow::shutDown);
+
+    connect(&m_updates, &ts590::UpdateChecker::finished, this, &MainWindow::onUpdateChecked);
+    checkForUpdates(false);
 }
 
 void MainWindow::showStartupWindow()
@@ -536,6 +543,32 @@ QWidget *MainWindow::createConnectionBar()
                                                            .toString(QKeySequence::NativeText)));
     connect(miniButton, &QToolButton::clicked, this, [this] { setMiniMode(true); });
     layout->addWidget(miniButton);
+
+    m_updateBanner = new QFrame;
+    m_updateBanner->setObjectName(QStringLiteral("updateBanner"));
+    m_updateBanner->setStyleSheet(QStringLiteral(
+        "#updateBanner { background: palette(highlight); border-radius: 4px; }"
+        "#updateBanner QLabel, #updateBanner QToolButton { color: palette(highlighted-text); }"
+        "#updateBanner QToolButton { border: none; padding: 0 2px; }"));
+    auto *bannerLayout = new QHBoxLayout(m_updateBanner);
+    bannerLayout->setContentsMargins(8, 1, 2, 1);
+    bannerLayout->setSpacing(4);
+    m_updateLabel = new QLabel;
+    m_updateLabel->setTextFormat(Qt::RichText);
+    m_updateLabel->setOpenExternalLinks(true);
+    m_updateLabel->setToolTip(tr("Open the release page; download and install it from there when you're ready"));
+    auto *dismiss = new QToolButton;
+    dismiss->setText(QStringLiteral("✕"));
+    dismiss->setToolTip(tr("Hide until the next version"));
+    connect(dismiss, &QToolButton::clicked, this, [this] {
+        QSettings().setValue(QStringLiteral("updates/dismissed"), m_updateVersion);
+        m_updateBanner->hide();
+    });
+    bannerLayout->addWidget(m_updateLabel);
+    bannerLayout->addWidget(dismiss);
+    m_updateBanner->hide();
+    layout->addSpacing(6);
+    layout->addWidget(m_updateBanner);
     layout->addStretch();
 
     refreshPorts();
@@ -2410,6 +2443,54 @@ void MainWindow::showAbout()
            "<p><a href=\"https://github.com/kingsqueak/590Ctrl\">github.com/kingsqueak/590Ctrl</a></p>"
            "<p><small>Built with Qt %2, running on Qt %3.</small></p></div>")
             .arg(QCoreApplication::applicationVersion(), QStringLiteral(QT_VERSION_STR), QString::fromLatin1(qVersion())));
+}
+
+void MainWindow::checkForUpdates(bool userAsked)
+{
+    m_updateUserAsked = m_updateUserAsked || userAsked;
+    m_updates.check();
+}
+
+void MainWindow::onUpdateChecked(bool ok, const QString &version, const QString &page)
+{
+    const bool userAsked = std::exchange(m_updateUserAsked, false);
+    const QString current = QCoreApplication::applicationVersion();
+    const bool newer = ok && ts590::UpdateChecker::isNewer(version, current);
+    if (newer) {
+        m_updateVersion = version;
+        m_updateLabel->setText(tr("<a href=\"%1\">Version %2 is available</a>").arg(page.toHtmlEscaped(), version.toHtmlEscaped()));
+        // Links take the Link colour, not the style sheet's; match the banner text.
+        QPalette palette = m_updateLabel->palette();
+        palette.setColor(QPalette::Link, palette.color(QPalette::HighlightedText));
+        m_updateLabel->setPalette(palette);
+        // Asking from the menu brings back a note the close button hid.
+        m_updateBanner->setVisible(userAsked
+                                   || QSettings().value(QStringLiteral("updates/dismissed")).toString() != version);
+    }
+    if (!userAsked)
+        return;
+
+    QMessageBox box(this);
+    box.setTextFormat(Qt::RichText);
+    if (!ok) {
+        box.setIcon(QMessageBox::Warning);
+        box.setText(tr("Couldn't check for updates"));
+        box.setInformativeText(tr("You have version %1. GitHub didn't answer; check the internet connection, "
+                                  "or look at the <a href=\"%2\">Releases page</a> yourself.")
+                                   .arg(current, QString::fromLatin1(ts590::UpdateChecker::kReleasesPage)));
+    } else if (!newer) {
+        box.setIcon(QMessageBox::Information);
+        box.setText(tr("590Ctrl is up to date"));
+        box.setInformativeText(tr("Version %1 is the latest.").arg(current));
+    } else {
+        box.setIcon(QMessageBox::Information);
+        box.setText(tr("590Ctrl %1 is available").arg(version.toHtmlEscaped()));
+        box.setInformativeText(tr("You have version %1. The <a href=\"%2\">%3 release page</a> has the new version "
+                                  "and what's changed. Download and install it from there when you're ready; "
+                                  "your settings are kept.")
+                                   .arg(current, page.toHtmlEscaped(), version.toHtmlEscaped()));
+    }
+    box.exec();
 }
 
 void MainWindow::showMessage(const QString &text)

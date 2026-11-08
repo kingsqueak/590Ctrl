@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(590Ctrl VERSION 0.15 DESCRIPTION "Kenwood TS-590SG control" LANGUAGES CXX)
+project(590Ctrl VERSION 0.15.1 DESCRIPTION "Kenwood TS-590SG control" LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -30,6 +30,7 @@ qt_add_library(ts590core STATIC
     src/core/TciServer.h src/core/TciServer.cpp
     src/core/Resampler.h src/core/Resampler.cpp
     src/core/RadioAudio.h src/core/RadioAudio.cpp
+    src/core/UpdateChecker.h src/core/UpdateChecker.cpp
 )
 target_include_directories(ts590core PUBLIC src/core)
 target_link_libraries(ts590core PUBLIC Qt6::Core Qt6::SerialPort Qt6::Network Qt6::WebSockets Qt6::Multimedia)
@@ -72,7 +73,7 @@ qt_generate_deploy_app_script(TARGET 590Ctrl OUTPUT_SCRIPT deploy_script NO_UNSU
 install(SCRIPT ${deploy_script})
 
 if(BUILD_TESTING)
-    foreach(test tst_catcodec tst_catlink tst_radio tst_eqpresets tst_qrz tst_tciserver tst_resampler)
+    foreach(test tst_catcodec tst_catlink tst_radio tst_eqpresets tst_qrz tst_tciserver tst_resampler tst_updatechecker)
         qt_add_executable(${test} tests/${test}.cpp)
         target_link_libraries(${test} PRIVATE ts590core Qt6::Test)
         add_test(NAME ${test} COMMAND ${test})

@@ -1,3 +1,5 @@
+<img src="resources/590Ctrl.png" alt="" width="128" align="right">
+
 # 590Ctrl
 
 A desktop control panel for the **Kenwood TS-590SG** over its USB port, for

@@ -1,0 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-FileCopyrightText: 2026 KC2RGW Chris
+// The program's icon on Windows (Explorer, the taskbar, Alt+Tab).
+IDI_ICON1 ICON "590Ctrl.ico"

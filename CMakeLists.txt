@@ -52,6 +52,10 @@ qt_add_executable(590Ctrl
 # Dock/Finder icon on macOS; the PNG is the window icon elsewhere.
 set_source_files_properties(resources/590Ctrl.icns PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
 qt_add_resources(590Ctrl "icon" PREFIX "/" FILES resources/590Ctrl.png)
+# The .exe's own icon on Windows. (resources/590Ctrl.* are made by scripts/make-icon.py.)
+if(WIN32)
+    target_sources(590Ctrl PRIVATE resources/590Ctrl.rc)
+endif()
 target_link_libraries(590Ctrl PRIVATE ts590core Qt6::Widgets Qt6::Multimedia)
 target_compile_definitions(590Ctrl PRIVATE PROJECT_VERSION="${PROJECT_VERSION}")
 set_target_properties(590Ctrl PROPERTIES

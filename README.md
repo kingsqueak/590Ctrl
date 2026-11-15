@@ -190,7 +190,7 @@ Tabs hidden, in the light appearance:
 
 ## Installing on Linux and Windows
 
-Each release has packages for x86-64 and arm64 Linux, and a Windows installer and zip for x64.
+Each release has packages for x86-64 and arm64 Linux, and a Windows installer for x64.
 
 ```sh
 sudo apt install ./590ctrl_*.deb        # Ubuntu 26.04
@@ -203,9 +203,8 @@ serial port, then log in again. The RPM and Arch packages include their own Qt.
 
 On Windows 10 or 11, run `590Ctrl-<version>-win-x64-setup.exe`. It installs for your user only (no
 administrator password), adds a Start menu entry and an uninstaller, and a later version installs
-over it, keeping your settings. The zip is the same program without an installer: unzip it
-somewhere and run `bin\590Ctrl.exe`. Neither is code-signed, so at the SmartScreen warning choose
-More info, then Run anyway. The radio's USB port needs the Silicon Labs CP210x driver, and shows
+over it, keeping your settings. It isn't code-signed, so at the SmartScreen warning choose More
+info, then Run anyway. The radio's USB port needs the Silicon Labs CP210x driver, and shows
 up as a COM port. The Windows build has been used by one operator with a TS-590S; please report
 what you find.
 

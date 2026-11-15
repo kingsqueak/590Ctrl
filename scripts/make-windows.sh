@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Build the Windows zip of 590Ctrl: the program with its Qt, nothing to install.
-# CI then makes the installer from the same folder (scripts/windows-installer.iss).
+# Build 590Ctrl for Windows and stage the program folder, with its Qt, that the
+# installer is made from (scripts/windows-installer.iss; CI runs Inno Setup on it).
 # Run from Git Bash with Visual Studio and the official Qt.
 # Usage: scripts/make-windows.sh <path to Qt, e.g. C:/Qt/6.12.0/msvc2022_64>
-# Writes dist/590Ctrl-<version>-win-x64.zip
+# Writes build-win/stage/590Ctrl-<version>/
 set -euo pipefail
 qt=${1:?path to the official Qt}
 cd "$(dirname "$0")/.."
@@ -27,8 +27,4 @@ done
 for dll in vcruntime140.dll vcruntime140_1.dll msvcp140.dll; do
   [ -e "$stage/bin/$dll" ] || cp "/c/Windows/System32/$dll" "$stage/bin/"
 done
-mkdir -p dist
-out="$PWD/dist/590Ctrl-$version-win-x64.zip"
-rm -f "$out"
-(cd build-win/stage && 7z a -tzip -bso0 "$out" "590Ctrl-$version")
-ls -la dist/
+echo "staged in $stage"

@@ -1,7 +1,7 @@
 name: Packages
 
 # Builds the universal macOS DMG, deb, RPM and Arch packages for x86-64 and arm64,
-# and the Windows installer and zip.
+# and the Windows installer.
 # Runs on a version tag (v*) or by hand; the packages are the run's artifacts.
 # By hand, "only" limits the run to one job; a release needs all of them.
 # Every package carries the DeepCW decoder (its model and ONNX Runtime): macOS,
@@ -111,7 +111,7 @@ jobs:
           "$RUNNER_TEMP/aqt/Scripts/aqt" install-qt windows desktop 6.10.3 win64_msvc2022_64 \
             -m qtserialport qtwebsockets qtmultimedia -O "$RUNNER_TEMP/Qt"
 
-      - name: Test and build the zip
+      - name: Test and build
         shell: bash
         run: ./scripts/make-windows.sh "$(cygpath -m "$RUNNER_TEMP/Qt/6.10.3/msvc2022_64")"
 
@@ -129,9 +129,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: 590ctrl-windows-x64
-          path: |
-            dist/*.zip
-            dist/*-setup.exe
+          path: dist/*-setup.exe
           if-no-files-found: error
 
       # The installer is what gets tested: install, start, uninstall.

@@ -1553,7 +1553,7 @@ QWidget *MainWindow::createSetupPage()
     m_baudCombo = new QComboBox;
     for (qint32 baud : kBaudRates)
         m_baudCombo->addItem(tr("%1 bps").arg(baud), baud);
-    m_baudCombo->setToolTip(tr("Must match radio menu 068 (USB port speed)"));
+    m_baudCombo->setToolTip(tr("Must match the radio's USB port speed: menu 068 on a TS-590SG, 062 on a TS-590S"));
     const qint32 savedBaud = QSettings().value(QStringLiteral("serial/baud"), 115200).toInt();
     m_baudCombo->setCurrentIndex(std::max(0, m_baudCombo->findData(savedBaud)));
     m_connectButton = new QPushButton(tr("Connect"));

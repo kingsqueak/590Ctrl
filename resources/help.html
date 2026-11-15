@@ -40,8 +40,8 @@ short description of it.</p>
 and the radio's audio (a sound device named "USB Audio CODEC").</p>
 <ul>
 <li><b>Port and speed:</b> open the <b>Setup</b> tab, or click the radio's name in the top line. 590Ctrl
-picks the radio's port by itself; <b>⟳</b> looks for ports again. The speed must match radio menu 068
-(USB port speed), 115200 bps from the factory.</li>
+picks the radio's port by itself; <b>⟳</b> looks for ports again. The speed must match the radio's USB
+port speed (menu 068 on a TS-590SG, 062 on a TS-590S), 115200 bps from the factory.</li>
 <li><b>Connect:</b> press <b>Connect</b>. The top line shows the model and firmware once the radio
 answers.</li>
 <li><b>Power:</b> the power symbol at the top left turns the radio on and off. If the radio is off, pressing
@@ -307,7 +307,8 @@ Updates…</b> asks now. Nothing is downloaded or installed for you.</li>
 <a name="trouble"></a>
 <h2>If something doesn't work</h2>
 <ul>
-<li><b>It won't connect:</b> check the speed against radio menu 068. On macOS choose
+<li><b>It won't connect:</b> check the speed against the radio's USB port speed (menu 068 on a
+TS-590SG, 062 on a TS-590S). On macOS choose
 <code>cu.SLAB_USBtoUART</code>. On Linux your account must be in the <code>dialout</code> group
 (<code>uucp</code> on Arch); log in again after adding it. On Windows the radio needs the Silicon Labs CP210x
 driver.</li>

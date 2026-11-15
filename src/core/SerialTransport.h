@@ -9,7 +9,7 @@ namespace ts590 {
 
 struct SerialSettings {
     QString portName;
-    qint32 baudRate = 115200;   // menu EX068 (USB port speed); factory default
+    qint32 baudRate = 115200;   // USB port speed: menu 068 (TS-590SG), 062 (TS-590S); factory default
 };
 
 struct SerialPortCandidate {

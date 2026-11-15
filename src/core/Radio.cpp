@@ -949,7 +949,8 @@ void Radio::handleTimeout(const QByteArray &command)
     if (m_state == State::Connecting && (command == "PS;" || command == "ID;")) {
         const CatTransport *transport = m_link.transport();
         emit message(tr("No answer from the radio on %1. If it is switched off, use the power button to "
-                        "turn it on; otherwise check that the USB port speed (menu 068) matches.")
+                        "turn it on; otherwise check that the USB port speed (menu 068 on a TS-590SG, 062 on a "
+                        "TS-590S) matches.")
                          .arg(transport ? transport->description() : QString()));
         teardown();
         return;

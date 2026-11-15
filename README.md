@@ -336,7 +336,8 @@ uses the serial bridge and picks it automatically (VID 10C4, PID EA60).
   installed, the same CP2102 also appears as `cu.usbserial-<serial>`, which
   stays silent. 590Ctrl lists the SLAB port first.
 * **Linux:** the port is `/dev/ttyUSB0` (or similar).
-* **Speed:** must match radio menu **068** (USB port communication speed).
+* **Speed:** must match the radio's USB port communication speed: menu **068** on a TS-590SG,
+  **062** on a TS-590S.
   The factory default is 115200 bps.
 * **RTS:** the radio only sends data while RTS is asserted, so 590Ctrl holds
   RTS high and DTR low. If you've assigned RTS to PTT in the radio's menus,

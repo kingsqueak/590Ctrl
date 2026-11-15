@@ -15,7 +15,7 @@
 namespace {
 
 constexpr int kHoldMs = 400;
-constexpr int kLabelWidthChars = 3;
+constexpr int kLabelWidthChars = 2;
 
 // Accepts "14.195", "14,195.5 kHz", "7074k", "7074000" etc.
 std::optional<qint64> parseFrequency(QString text)

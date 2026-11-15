@@ -13,8 +13,8 @@ int main(int argc, char *argv[])
     QApplication::setApplicationVersion(QStringLiteral(PROJECT_VERSION));
     QApplication::setWindowIcon(QIcon(QStringLiteral(":/resources/590Ctrl.png")));
 
-    // Choices from View > Style and View > Appearance.
-    applySavedAppearanceAndStyle();
+    // The app's look, light or dark as chosen under View > Appearance.
+    applySavedAppearance();
 
     MainWindow window;
     window.showStartupWindow();

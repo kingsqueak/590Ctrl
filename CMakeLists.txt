@@ -35,8 +35,7 @@ qt_add_library(ts590core STATIC
 target_include_directories(ts590core PUBLIC src/core)
 target_link_libraries(ts590core PUBLIC Qt6::Core Qt6::SerialPort Qt6::Network Qt6::WebSockets Qt6::Multimedia)
 
-qt_add_executable(590Ctrl
-    src/app/main.cpp
+set(APP_SOURCES
     src/app/MainWindow.h src/app/MainWindow.cpp
     src/app/FrequencyDisplay.h src/app/FrequencyDisplay.cpp
     src/app/EqualizerPanel.h src/app/EqualizerPanel.cpp
@@ -47,6 +46,10 @@ qt_add_executable(590Ctrl
     src/app/MiniWindow.h src/app/MiniWindow.cpp
     src/app/PowerButton.h src/app/PowerButton.cpp
     src/app/AppStyle.h src/app/AppStyle.cpp
+)
+qt_add_executable(590Ctrl
+    src/app/main.cpp
+    ${APP_SOURCES}
     resources/590Ctrl.icns
 )
 # Dock/Finder icon on macOS; the PNG is the window icon elsewhere.
@@ -82,4 +85,11 @@ if(BUILD_TESTING)
         target_link_libraries(${test} PRIVATE ts590core Qt6::Test)
         add_test(NAME ${test} COMMAND ${test})
     endforeach()
+
+    # Renders the main window to PNG files without a radio or a screen, on
+    # the simulator and with throwaway settings. See tools/ui-shots/README.md.
+    qt_add_executable(ui-shots tools/ui-shots/main.cpp ${APP_SOURCES})
+    target_include_directories(ui-shots PRIVATE src/app)
+    target_link_libraries(ui-shots PRIVATE ts590core Qt6::Widgets Qt6::Multimedia)
+    target_compile_definitions(ui-shots PRIVATE PROJECT_VERSION="${PROJECT_VERSION}")
 endif()

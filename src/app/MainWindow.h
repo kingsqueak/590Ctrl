@@ -12,18 +12,18 @@
 #include <QMainWindow>
 #include <QTimer>
 
+class QAction;
+class QBoxLayout;
 class QButtonGroup;
-class QCheckBox;
 class QComboBox;
+class QFrame;
 class QLabel;
 class QPushButton;
-class QRadioButton;
 class QSettings;
 class QSlider;
 class QSpinBox;
-class QFormLayout;
-class QGroupBox;
 class QLineEdit;
+class QTabWidget;
 class QPlainTextEdit;
 class QTableWidget;
 class EqualizerPanel;
@@ -39,6 +39,16 @@ class MainWindow : public QMainWindow
 public:
     explicit MainWindow(QWidget *parent = nullptr);
 
+    // Where the tabs (CW, QRZ, Equalizer, Menu, Setup) sit: below the
+    // operating controls, or beside them in a wider, shorter window.
+    enum class Arrangement { Below, Side };
+    void setArrangement(Arrangement arrangement);
+    void setTabsVisible(bool visible);
+    void showTab(int index);
+    QSize tabMinimumSize(int index) const;   // for tools/ui-shots
+    QWidget *miniWindow() const;             // for tools/ui-shots
+    void connectSimulator();   // for tools/ui-shots
+
     // The full or the mini window, whichever was in use at the last quit.
     void showStartupWindow();
 
@@ -47,20 +57,25 @@ protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
-    QWidget *createConnectionBar();
+    QWidget *createTopLine();
     QWidget *createVfoPanel();
-    QWidget *createModeBar();
-    QWidget *createOperatePage();
-    QWidget *createRitXitGroup();
-    QWidget *createTxFilterGroup();
-    QWidget *createNotchGroup();
-    QLayout *createPanelToggles();
-    QWidget *createTransmitGroup();
+    QWidget *createBandModeRow();
+    QWidget *createOperatePanels();
+    QWidget *createReceivePanel();
+    QWidget *createFilterPanel();
+    QWidget *createTransmitPanel();
     QWidget *createEqualizerPage();
-    QWidget *createBandsPage();
     QWidget *createCwPage();
     QWidget *createQrzPage();
+    QWidget *createSetupPage();
     QSlider *createLevelSlider(void (ts590::Radio::*setter)(int), int maximum = 255);
+    QSlider *createPowerSlider(void (ts590::Radio::*setter)(int));
+    QPushButton *createToggle(const QString &text, const QString &tip, void (ts590::Radio::*setter)(bool));
+
+    void applyArrangement();
+    void rememberSize();
+    void fitWindow();
+    void setRadioInfo(const QString &text, bool connected);
 
     void refreshPorts();
     void toggleConnection();
@@ -130,8 +145,8 @@ private:
     bool m_shutDown = false;
 
     QButtonGroup *m_modeButtons = nullptr;
-    QCheckBox *m_dataCheck = nullptr;
-    QPushButton *m_antennaButton = nullptr;   // ANT1 / ANT2
+    QPushButton *m_dataButton = nullptr;
+    QButtonGroup *m_antennaButtons = nullptr;   // ANT 1 / 2
     QPushButton *m_rxAntennaButton = nullptr;
     QPushButton *m_driveOutButton = nullptr;
     QPushButton *m_tunerButton = nullptr;
@@ -161,7 +176,7 @@ private:
     QSpinBox *m_offsetSpin = nullptr;
     QTimer m_offsetHold;   // ignore offset echoes briefly while the user adjusts
 
-    QFormLayout *m_transmitForm = nullptr;
+    QList<QWidget *> m_tunePowerWidgets;   // the Setup row the TS-590S doesn't have
     QSlider *m_txPowerSlider = nullptr;
     QSlider *m_tunePowerSlider = nullptr;
     QSlider *m_carrierSlider = nullptr;
@@ -180,8 +195,8 @@ private:
     QPushButton *m_txButton = nullptr;     // momentary transmit
     QPushButton *m_tuneCarrierButton = nullptr;   // TUN: latching TX Tune carrier
 
-    QRadioButton *m_filterA = nullptr;
-    QRadioButton *m_filterB = nullptr;
+    QPushButton *m_filterA = nullptr;
+    QPushButton *m_filterB = nullptr;
     QLabel *m_filterLabels[2] = {};
     QComboBox *m_filterCombos[2] = {};
     ts590::FilterLayout m_filterLayout;
@@ -193,7 +208,7 @@ private:
     QPushButton *m_fineButton = nullptr;
     QPushButton *m_autoNotchButton = nullptr;
     QPushButton *m_manualNotchButton = nullptr;
-    QCheckBox *m_notchWideCheck = nullptr;
+    QPushButton *m_notchWideButton = nullptr;
     QSlider *m_notchSlider = nullptr;
 
     QSlider *m_keyerSpeedSlider = nullptr;
@@ -205,7 +220,7 @@ private:
     QPushButton *m_cwSendButton = nullptr;
     QPushButton *m_cwStopButton = nullptr;
     QLabel *m_cwQueueLabel = nullptr;
-    QGroupBox *m_decoderGroup = nullptr;      // TS-590SG only
+    QWidget *m_decoderGroup = nullptr;      // TS-590SG only
     QPushButton *m_decoderButton = nullptr;
     QSlider *m_decoderSlider = nullptr;
     QPlainTextEdit *m_decoderText = nullptr;
@@ -232,10 +247,28 @@ private:
 
     EqualizerPanel *m_rxEq = nullptr;
     EqualizerPanel *m_txEq = nullptr;
-    QLabel *m_radioInfo = nullptr;
+    // Top line: status chips and passing messages.
+    QLabel *m_radioChip = nullptr;
+    QLabel *m_tciChip = nullptr;
+    QLabel *m_tciSetupLabel = nullptr;   // the same, in words, on the Setup tab
+    QLabel *m_message = nullptr;
+    QTimer m_messageTimer;
+
+    Arrangement m_arrangement = Arrangement::Below;
+    bool m_tabsVisible = true;
+    QWidget *m_operate = nullptr;   // header, band/mode row and the three panels
+    QFrame *m_tabPanel = nullptr;
+    QTabWidget *m_tabs = nullptr;
+    QBoxLayout *m_body = nullptr;           // m_operate and m_tabPanel, below or beside
+    QBoxLayout *m_setupColumns = nullptr;   // the Setup tab's columns, in a row or stacked
+    QBoxLayout *m_cwColumns = nullptr;      // the CW tab's keyer and decoder, likewise
+    QWidget *m_cwKeyer = nullptr;
+    QPushButton *m_tabsButton = nullptr;
+    QAction *m_tabsAction = nullptr;
+    QAction *m_belowAction = nullptr;
+    QAction *m_sideAction = nullptr;
     ts590::RadioAudio m_radioAudio;   // before m_tci, which uses it
     ts590::TciServer m_tci{&m_radio};
-    QLabel *m_tciStatus = nullptr;
 
     // Update note to the right of the Mini button: a link to the newer
     // release and a close button that hides it until the next version.

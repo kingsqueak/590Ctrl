@@ -60,9 +60,12 @@ EqualizerPanel::EqualizerPanel(EqType type, EqPresetLibrary *library, QWidget *p
     m_hint->setWordWrap(true);
     m_hint->setForegroundRole(QPalette::PlaceholderText);
 
+    QLayout *presetRow = createPresetRow();   // also makes Flat and Reload, which sit in the header
     auto *header = new QHBoxLayout;
     header->addWidget(new QLabel(tr("Curve:")));
     header->addWidget(m_curveCombo);
+    header->addWidget(m_flatButton);
+    header->addWidget(m_reloadButton);
     header->addWidget(m_hint, 1);
 
     auto *bands = new QGridLayout;
@@ -77,13 +80,19 @@ EqualizerPanel::EqualizerPanel(EqType type, EqPresetLibrary *library, QWidget *p
         slider->setPageStep(3);
         slider->setTickPosition(QSlider::TicksBothSides);
         slider->setTickInterval(6);
-        slider->setMinimumHeight(140);
+        slider->setMinimumHeight(96);
         slider->setToolTip(tr("%1 Hz").arg(eqBandFrequencyHz(band)));
         connect(slider, &QSlider::valueChanged, this, [this, band] { onSliderChanged(band); });
 
         auto *freq = new QLabel(eqBandLabel(band));
         freq->setAlignment(Qt::AlignCenter);
         freq->setForegroundRole(QPalette::PlaceholderText);
+        // Small, so all 18 bands fit beside the operating controls too.
+        for (QLabel *label : {value, freq}) {
+            QFont small = label->font();
+            small.setPointSizeF(small.pointSizeF() * 0.82);
+            label->setFont(small);
+        }
 
         bands->addWidget(value, 0, band);
         bands->addWidget(slider, 1, band, Qt::AlignHCenter);
@@ -93,9 +102,10 @@ EqualizerPanel::EqualizerPanel(EqType type, EqPresetLibrary *library, QWidget *p
     }
 
     auto *layout = new QVBoxLayout(this);
+    layout->setContentsMargins(0, 4, 0, 0);
     layout->addLayout(header);
     layout->addLayout(bands);
-    layout->addLayout(createPresetRow());
+    layout->addLayout(presetRow);
     layout->addLayout(createAutoLoadRow());
 
     connect(library, &EqPresetLibrary::presetsChanged, this, [this](EqType changed) {
@@ -123,7 +133,7 @@ QLayout *EqualizerPanel::createPresetRow()
     connect(m_reloadButton, &QPushButton::clicked, this, &EqualizerPanel::reloadRequested);
 
     m_presetCombo = new QComboBox;
-    m_presetCombo->setMinimumContentsLength(16);
+    m_presetCombo->setMinimumContentsLength(12);
     m_presetCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     m_presetCombo->setPlaceholderText(tr("No presets"));
     connect(m_presetCombo, &QComboBox::currentIndexChanged, this, &EqualizerPanel::updateEnabledState);
@@ -148,15 +158,13 @@ QLayout *EqualizerPanel::createPresetRow()
     m_moreButton->setMinimumWidth(m_moreButton->fontMetrics().horizontalAdvance(m_moreButton->text()) + 28);
 
     auto *row = new QHBoxLayout;
-    row->addWidget(m_flatButton);
-    row->addWidget(m_reloadButton);
-    row->addStretch();
     row->addWidget(new QLabel(tr("Preset:")));
     row->addWidget(m_presetCombo);
     row->addWidget(m_applyButton);
     row->addWidget(m_saveAsButton);
     row->addWidget(m_deleteButton);
     row->addWidget(m_moreButton);
+    row->addStretch();
     return row;
 }
 

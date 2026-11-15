@@ -26,33 +26,32 @@
 #include <QFormLayout>
 #include <QFrame>
 #include <QGridLayout>
-#include <QGroupBox>
 #include <QHeaderView>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QMouseEvent>
 #include <QNetworkInterface>
 #include <QMediaDevices>
 #include <QPermissions>
 #include <QPlainTextEdit>
 #include <QPushButton>
-#include <QRadioButton>
+#include <QScrollArea>
 #include <QSettings>
 #include <QSlider>
 #include <QSpinBox>
 #include <QStandardPaths>
-#include <QStatusBar>
 #include <QStyle>
 #include <QStyleFactory>
 #include <QTableWidget>
 #include <QTabWidget>
 #include <QTimeZone>
-#include <QToolBar>
 #include <QToolButton>
 #include <QVBoxLayout>
 
+#include <functional>
 #include <tuple>
 #include <utility>
 
@@ -65,9 +64,15 @@ constexpr int kMessageTimeoutMs = 8000;
 const QList<qint32> kBaudRates = {9600, 19200, 38400, 57600, 115200};
 
 constexpr int kVfoAPointSize = 36;
+constexpr int kVfoASidePointSize = 28;   // with the tabs beside, where width is short
 constexpr int kCwTextPointSize = 14;   // keyboard CW entry and decoded text
 constexpr int kRitXitStepHz = 10;
 constexpr int kOffsetHoldMs = 500;
+constexpr int kSliderMinWidth = 70;
+// Tabs beside: the operating controls keep this width and the tabs take the rest.
+constexpr int kSideOperateWidth = 840;
+const QSize kBelowSize(980, 760);
+const QSize kSideSize(1400, 500);
 
 // RIT/XIT offset: signed display ("+120 Hz") and one step per wheel click on
 // macOS, like the frequency display.
@@ -100,9 +105,131 @@ QString nrLevelText(NoiseReduction nr, int level)
                                      : QString::number(level);
 }
 
-// macOS defaults to right-aligned labels and fields kept at their size hint,
-// which leaves slider rows ragged. Left-align labels and stretch fields so
-// every slider in a form starts and ends at the same x.
+// A label that works as a button: the status chips in the top line.
+class ChipLabel : public QLabel
+{
+public:
+    ChipLabel()
+    {
+        setProperty("chip", true);
+        setTextFormat(Qt::RichText);
+        setCursor(Qt::PointingHandCursor);
+    }
+    std::function<void()> onClick;
+
+protected:
+    void mouseReleaseEvent(QMouseEvent *event) override
+    {
+        if (event->button() == Qt::LeftButton && rect().contains(event->position().toPoint()) && onClick)
+            onClick();
+    }
+};
+
+// "● text ▾", the dot green while the thing is working.
+QString chipText(const QString &text, bool on)
+{
+    return QStringLiteral("<span style=\"color:%1\">●</span>&nbsp;%2&nbsp;▾")
+        .arg(on ? QStringLiteral("#2FBF71") : QStringLiteral("#8A93A3"), text.toHtmlEscaped());
+}
+
+// A flat panel; the look is in AppStyle's sheet ("true", or "vfo" for the
+// darker display window).
+QFrame *createPanel(const char *kind = "true")
+{
+    auto *panel = new QFrame;
+    panel->setProperty("panel", QLatin1String(kind));
+    return panel;
+}
+
+// A small capitals heading with a hairline running to the right edge.
+QWidget *createHeading(const QString &text)
+{
+    auto *label = new QLabel(text.toUpper());
+    label->setProperty("heading", true);
+    auto *rule = new QFrame;
+    rule->setProperty("rule", true);
+    rule->setFixedHeight(1);
+    auto *heading = new QWidget;
+    auto *layout = new QHBoxLayout(heading);
+    layout->setContentsMargins(0, 0, 0, 2);
+    layout->setSpacing(8);
+    layout->addWidget(label);
+    layout->addWidget(rule, 1);
+    return heading;
+}
+
+// Joins buttons into one strip for an either/or choice.
+QHBoxLayout *createSegment(const QList<QAbstractButton *> &buttons)
+{
+    auto *layout = new QHBoxLayout;
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(0);
+    for (qsizetype i = 0; i < buttons.size(); ++i) {
+        buttons[i]->setProperty("seg", i == 0 ? "first" : i == buttons.size() - 1 ? "last" : "mid");
+        layout->addWidget(buttons[i]);
+    }
+    return layout;
+}
+
+// Checks one button of an exclusive group, or none.
+void checkOnly(QButtonGroup *group, QAbstractButton *button)
+{
+    if (button) {
+        button->setChecked(true);
+    } else if (QAbstractButton *checked = group->checkedButton()) {
+        group->setExclusive(false);
+        checked->setChecked(false);
+        group->setExclusive(true);
+    }
+}
+
+// Rows of "name or button | slider | value | optional button", in columns
+// that line up down a panel.
+class RowGrid
+{
+public:
+    RowGrid(int leadWidth, int valueWidth)
+        : m_grid(new QGridLayout)
+        , m_valueWidth(valueWidth)
+    {
+        m_grid->setContentsMargins(0, 0, 0, 0);
+        m_grid->setHorizontalSpacing(8);
+        m_grid->setVerticalSpacing(4);
+        m_grid->setColumnMinimumWidth(0, leadWidth);
+        m_grid->setColumnStretch(1, 1);
+    }
+
+    QGridLayout *layout() const { return m_grid; }
+
+    void add(QWidget *lead, QSlider *slider, QLabel *value, QWidget *extra = nullptr)
+    {
+        const int row = m_grid->rowCount();
+        value->setFixedWidth(m_valueWidth);
+        value->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        m_grid->addWidget(lead, row, 0);
+        m_grid->addWidget(slider, row, 1);
+        m_grid->addWidget(value, row, 2);
+        if (extra)
+            m_grid->addWidget(extra, row, 3);
+        m_grid->setRowMinimumHeight(row, kRowHeight);
+    }
+
+    // A named slider whose value is shown as the plain number.
+    void addNumber(const QString &name, QSlider *slider, QWidget *extra = nullptr)
+    {
+        auto *value = new QLabel(QString::number(slider->value()));
+        QObject::connect(slider, &QSlider::valueChanged, value, qOverload<int>(&QLabel::setNum));
+        add(new QLabel(name), slider, value, extra);
+    }
+
+private:
+    static constexpr int kRowHeight = 24;
+    QGridLayout *m_grid;
+    int m_valueWidth;
+};
+
+// Left-align labels and stretch fields so every field in a form starts and
+// ends at the same x on every platform.
 void alignForm(QFormLayout *form)
 {
     form->setLabelAlignment(Qt::AlignLeft | Qt::AlignVCenter);
@@ -124,27 +251,39 @@ MainWindow::MainWindow(QWidget *parent)
 {
     setWindowTitle(QStringLiteral("590Ctrl %1").arg(QCoreApplication::applicationVersion()));
 
-    addToolBar(Qt::TopToolBarArea, [this] {
-        auto *bar = new QToolBar(tr("Connection"));
-        bar->setObjectName(QStringLiteral("connectionBar"));
-        bar->setMovable(false);
-        bar->addWidget(createConnectionBar());
-        return bar;
-    }());
+    m_tabs = new QTabWidget;
+    m_tabs->setDocumentMode(true);
+    m_tabs->addTab(createCwPage(), tr("CW"));
+    m_tabs->addTab(createQrzPage(), tr("QRZ"));
+    m_tabs->addTab(createEqualizerPage(), tr("Equalizer"));
+    m_tabs->addTab(new MenuPanel(&m_radio), tr("Menu"));
+    m_tabs->addTab(createSetupPage(), tr("Setup"));   // last: the radio chip opens it
+    m_tabPanel = createPanel();
+    auto *tabLayout = new QVBoxLayout(m_tabPanel);
+    tabLayout->setContentsMargins(10, 2, 10, 10);
+    tabLayout->addWidget(m_tabs);
 
-    auto *tabs = new QTabWidget;
-    tabs->addTab(createOperatePage(), tr("Operate"));
-    tabs->addTab(createEqualizerPage(), tr("Equalizer"));
-    tabs->addTab(createBandsPage(), tr("Bands"));
-    tabs->addTab(createCwPage(), tr("CW"));
-    tabs->addTab(new MenuPanel(&m_radio), tr("Menu"));
-    tabs->addTab(createQrzPage(), tr("QRZ"));
+    // Everything used while operating, always in view. The tabs sit below it
+    // or beside it (View > Tabs Below / Tabs Beside).
+    m_operate = new QWidget;
+    auto *operateLayout = new QVBoxLayout(m_operate);
+    operateLayout->setContentsMargins(0, 0, 0, 0);
+    operateLayout->setSpacing(8);
+    operateLayout->addWidget(createVfoPanel());
+    operateLayout->addWidget(createBandModeRow());
+    operateLayout->addWidget(createOperatePanels());
+    operateLayout->addStretch();
 
     auto *central = new QWidget;
     auto *layout = new QVBoxLayout(central);
-    layout->addWidget(createVfoPanel());
-    layout->addWidget(createModeBar());
-    layout->addWidget(tabs, 1);
+    layout->setContentsMargins(8, 6, 8, 8);
+    layout->setSpacing(8);
+    layout->addWidget(createTopLine());
+    m_body = new QBoxLayout(QBoxLayout::TopToBottom);
+    m_body->setSpacing(8);
+    m_body->addWidget(m_operate);
+    m_body->addWidget(m_tabPanel, 1);
+    layout->addLayout(m_body, 1);
     setCentralWidget(central);
 
     m_mini = new MiniWindow(kVfoAPointSize, this);
@@ -152,11 +291,11 @@ MainWindow::MainWindow(QWidget *parent)
     m_radioControls << m_mini->radioControls();
     connect(m_mini, &MiniWindow::fullModeRequested, this, [this] { setMiniMode(false); });
 
-    // The macOS style's slider minimum is just the knob, so a narrow window
-    // squeezed the sliders to nothing. Keep every slider usable.
+    // A slider's own minimum is just the knob, so a narrow window squeezed
+    // the sliders to nothing. Keep every slider usable.
     for (QSlider *slider : central->findChildren<QSlider *>()) {
         if (slider->orientation() == Qt::Horizontal)
-            slider->setMinimumWidth(120);
+            slider->setMinimumWidth(kSliderMinWidth);
     }
 
     auto *monitorDock = new QDockWidget(tr("CAT Monitor"));
@@ -171,20 +310,20 @@ MainWindow::MainWindow(QWidget *parent)
     QAction *miniAction = viewMenu->addAction(tr("Mini Window"), this, [this] { setMiniMode(true); });
     miniAction->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_M));
 
-    // Widget style and light/dark appearance, applied live and remembered.
-    QMenu *styleMenu = viewMenu->addMenu(tr("Style"));
-    auto *styleGroup = new QActionGroup(this);
-    const QString current = currentStyleName();
-    for (const QString &name : availableStyles()) {
-        QAction *action = styleMenu->addAction(name);
+    viewMenu->addSeparator();
+    auto *arrangementGroup = new QActionGroup(this);
+    m_belowAction = viewMenu->addAction(tr("Tabs Below"), this, [this] { setArrangement(Arrangement::Below); });
+    m_sideAction = viewMenu->addAction(tr("Tabs Beside"), this, [this] { setArrangement(Arrangement::Side); });
+    for (QAction *action : {m_belowAction, m_sideAction}) {
         action->setCheckable(true);
-        action->setChecked(name.compare(current, Qt::CaseInsensitive) == 0);
-        styleGroup->addAction(action);
-        connect(action, &QAction::triggered, this, [name] {
-            applyStyle(name);
-            saveStyle(name);
-        });
+        arrangementGroup->addAction(action);
     }
+    m_tabsAction = viewMenu->addAction(tr("Show Tabs"), this, [this](bool on) { setTabsVisible(on); });
+    m_tabsAction->setCheckable(true);
+    m_tabsAction->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_T));
+    viewMenu->addSeparator();
+
+    // Light or dark, applied live and remembered.
     QMenu *appearanceMenu = viewMenu->addMenu(tr("Appearance"));
     auto *appearanceGroup = new QActionGroup(this);
     for (auto [appearance, label] : {std::pair{Appearance::System, tr("System")},
@@ -213,10 +352,6 @@ MainWindow::MainWindow(QWidget *parent)
     QAction *updateAction = helpMenu->addAction(tr("Check for Updates…"), this, [this] { checkForUpdates(true); });
     updateAction->setMenuRole(QAction::ApplicationSpecificRole);
 
-    m_radioInfo = new QLabel;
-    statusBar()->addPermanentWidget(m_radioInfo);
-    m_tciStatus = new QLabel;
-    statusBar()->addPermanentWidget(m_tciStatus);
     connect(&m_tci, &TciServer::clientsChanged, this, &MainWindow::refreshTciStatus);
     connect(&m_tci, &TciServer::audioError, this, &MainWindow::showMessage);
     startTciServer();
@@ -229,11 +364,12 @@ MainWindow::MainWindow(QWidget *parent)
                              : model == kModelTs590S ? QStringLiteral("TS-590S")
                                                      : tr("ID %1").arg(model);
         // TX Tune power (TP) only exists on the SG.
-        m_transmitForm->setRowVisible(1, model == kModelTs590SG);
+        for (QWidget *widget : std::as_const(m_tunePowerWidgets))
+            widget->setVisible(model == kModelTs590SG);
         m_monitorSlider->setMaximum(txMonitorMax(model));
         m_decoderGroup->setVisible(model == kModelTs590SG);   // the S has no decoder
-        m_radioInfo->setText(tr("%1 · firmware %2 · %3")
-                                 .arg(name, firmware, m_radio.link()->transport()->description()));
+        setRadioInfo(tr("%1 · firmware %2 · %3").arg(name, firmware, m_radio.link()->transport()->description()),
+                     true);
     });
     connect(&m_radio, &Radio::frequencyChanged, this, [this](Vfo vfo, qint64 hz) {
         (vfo == Vfo::B ? m_vfoB : m_vfoA)->setFrequency(hz);
@@ -436,8 +572,16 @@ MainWindow::MainWindow(QWidget *parent)
     });
 
     QSettings settings;
+    m_arrangement = settings.value(QStringLiteral("window/arrangement")).toInt() == int(Arrangement::Side)
+                        ? Arrangement::Side
+                        : Arrangement::Below;
+    m_tabsVisible = settings.value(QStringLiteral("window/tabs"), true).toBool();
+    applyArrangement();
+    resize(kBelowSize);
     restoreGeometry(settings.value(QStringLiteral("window/geometry")).toByteArray());
     restoreState(settings.value(QStringLiteral("window/state")).toByteArray());
+    if (!settings.contains(QStringLiteral("window/geometry")) && m_arrangement == Arrangement::Side)
+        fitWindow();
     m_mini->restoreGeometry(settings.value(QStringLiteral("mini/geometry")).toByteArray());
     m_mini->setPinned(settings.value(QStringLiteral("mini/pinned"), true).toBool());
     onStateChanged(Radio::State::Disconnected);
@@ -471,6 +615,113 @@ void MainWindow::setMiniMode(bool mini)
     hidden->hide();
 }
 
+// ---------------------------------------------------------------- arrangement
+
+void MainWindow::setArrangement(Arrangement arrangement)
+{
+    if (arrangement == m_arrangement)
+        return;
+    rememberSize();
+    m_arrangement = arrangement;
+    applyArrangement();
+    fitWindow();
+}
+
+void MainWindow::setTabsVisible(bool visible)
+{
+    if (visible == m_tabsVisible) {
+        applyArrangement();   // puts the button and menu item back in step
+        return;
+    }
+    rememberSize();
+    m_tabsVisible = visible;
+    applyArrangement();
+    fitWindow();
+}
+
+void MainWindow::applyArrangement()
+{
+    const bool side = m_arrangement == Arrangement::Side;
+    m_body->setDirection(side ? QBoxLayout::LeftToRight : QBoxLayout::TopToBottom);
+    m_setupColumns->setDirection(side ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight);
+    m_cwColumns->setDirection(side ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight);
+    m_cwKeyer->setMaximumWidth(side ? QWIDGETSIZE_MAX : 320);
+    m_cwKeyer->setSizePolicy(QSizePolicy::Preferred, side ? QSizePolicy::Maximum : QSizePolicy::Preferred);
+    m_tabPanel->setVisible(m_tabsVisible);
+    const int pointSize = side ? kVfoASidePointSize : kVfoAPointSize;
+    m_vfoA->setPointSize(pointSize);
+    m_vfoB->setPointSize(pointSize / 2);
+    // Beside the tabs the operating controls keep their width; on their own
+    // they fill the window.
+    m_operate->setMaximumWidth(side && m_tabsVisible
+                                   ? std::max(kSideOperateWidth, m_operate->minimumSizeHint().width())
+                                   : QWIDGETSIZE_MAX);
+    m_tabsButton->setChecked(m_tabsVisible);
+    m_tabsAction->setChecked(m_tabsVisible);
+    (side ? m_sideAction : m_belowAction)->setChecked(true);
+}
+
+// The window's size is remembered for each arrangement, while its tabs show.
+void MainWindow::rememberSize()
+{
+    if (!m_tabsVisible || isMaximized() || isFullScreen() || m_miniMode)
+        return;
+    QSettings().setValue(m_arrangement == Arrangement::Side ? QStringLiteral("window/sizeSide")
+                                                            : QStringLiteral("window/sizeBelow"),
+                         size());
+}
+
+// After the arrangement or the tabs change: shrink around the operating
+// controls, or go back to the size this arrangement had.
+void MainWindow::fitWindow()
+{
+    if (isMaximized() || isFullScreen())
+        return;
+    QTimer::singleShot(0, this, [this] {
+        centralWidget()->layout()->activate();
+        layout()->activate();
+        const bool side = m_arrangement == Arrangement::Side;
+        const QSize minimum = minimumSizeHint();
+        if (!m_tabsVisible) {
+            resize(side ? minimum.width() : width(), minimum.height());
+            return;
+        }
+        const QSize fallback = side ? kSideSize : kBelowSize;
+        const QSize saved = QSettings()
+                                .value(side ? QStringLiteral("window/sizeSide") : QStringLiteral("window/sizeBelow"),
+                                       fallback)
+                                .toSize();
+        resize(saved.expandedTo(minimum));
+    });
+}
+
+void MainWindow::showTab(int index)
+{
+    m_tabs->setCurrentIndex(index);
+}
+
+QSize MainWindow::tabMinimumSize(int index) const
+{
+    return m_tabs->widget(index)->minimumSizeHint();
+}
+
+QWidget *MainWindow::miniWindow() const
+{
+    return m_mini;
+}
+
+void MainWindow::connectSimulator()
+{
+    m_portCombo->setCurrentIndex(m_portCombo->findData(kSimulatorPort));
+    if (m_radio.state() == Radio::State::Disconnected)
+        toggleConnection();
+}
+
+void MainWindow::setRadioInfo(const QString &text, bool connected)
+{
+    m_radioChip->setText(chipText(text, connected));
+}
+
 bool MainWindow::eventFilter(QObject *watched, QEvent *event)
 {
     if (event->type() == QEvent::Quit)
@@ -493,6 +744,9 @@ void MainWindow::shutDown()
     QSettings settings;
     settings.setValue(QStringLiteral("window/geometry"), saveGeometry());
     settings.setValue(QStringLiteral("window/state"), saveState());
+    settings.setValue(QStringLiteral("window/arrangement"), int(m_arrangement));
+    settings.setValue(QStringLiteral("window/tabs"), m_tabsVisible);
+    rememberSize();
     settings.setValue(QStringLiteral("window/mini"), m_miniMode);
     settings.setValue(QStringLiteral("mini/geometry"), m_mini->saveGeometry());
     settings.setValue(QStringLiteral("mini/pinned"), m_mini->isPinned());
@@ -500,56 +754,44 @@ void MainWindow::shutDown()
 
 // ------------------------------------------------------------------ builders
 
-QWidget *MainWindow::createConnectionBar()
+QPushButton *MainWindow::createToggle(const QString &text, const QString &tip, void (Radio::*setter)(bool))
 {
-    m_portCombo = new QComboBox;
-    m_portCombo->setMinimumContentsLength(28);
-    m_portCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    auto *button = new QPushButton(text);
+    button->setCheckable(true);
+    button->setToolTip(tip);
+    connect(button, &QPushButton::clicked, this, [this, setter](bool on) {
+        (m_radio.*setter)(on);
+        refreshPanelToggles();   // show the radio's state until it answers
+    });
+    m_radioControls << button;
+    return button;
+}
 
-    auto *refresh = new QToolButton;
-    refresh->setText(QStringLiteral("⟳"));
-    refresh->setToolTip(tr("Rescan serial ports"));
-    connect(refresh, &QToolButton::clicked, this, &MainWindow::refreshPorts);
-
-    m_baudCombo = new QComboBox;
-    for (qint32 baud : kBaudRates)
-        m_baudCombo->addItem(tr("%1 bps").arg(baud), baud);
-    m_baudCombo->setToolTip(tr("Must match radio menu 068 (USB port speed)"));
-    const qint32 savedBaud = QSettings().value(QStringLiteral("serial/baud"), 115200).toInt();
-    m_baudCombo->setCurrentIndex(std::max(0, m_baudCombo->findData(savedBaud)));
-
-    m_connectButton = new QPushButton(tr("Connect"));
-    m_connectButton->setDefault(true);
-    connect(m_connectButton, &QPushButton::clicked, this, &MainWindow::toggleConnection);
-
+// One slim line across the top: power, what's connected, messages, and the
+// window's own buttons. Port and speed are on the Setup tab.
+QWidget *MainWindow::createTopLine()
+{
     m_powerButton = new PowerButton;
     m_powerButton->setToolTip(tr("Radio power"));
     connect(m_powerButton, &PowerButton::clicked, this, &MainWindow::togglePower);
 
-    auto *bar = new QWidget;
-    auto *layout = new QHBoxLayout(bar);
-    layout->setContentsMargins(4, 2, 4, 2);
-    layout->addWidget(new QLabel(tr("Port:")));
-    layout->addWidget(m_portCombo);
-    layout->addWidget(refresh);
-    layout->addWidget(m_baudCombo);
-    layout->addWidget(m_connectButton);
-    layout->addSpacing(6);
-    layout->addWidget(m_powerButton);
-
-    auto *miniButton = new QToolButton;
-    miniButton->setText(tr("Mini"));
-    miniButton->setToolTip(tr("Mini window (%1)").arg(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_M)
-                                                           .toString(QKeySequence::NativeText)));
-    connect(miniButton, &QToolButton::clicked, this, [this] { setMiniMode(true); });
-    layout->addWidget(miniButton);
+    auto *radioChip = new ChipLabel;
+    radioChip->setToolTip(tr("The radio's connection. Click for the port and speed on the Setup tab."));
+    radioChip->onClick = [this] {
+        setTabsVisible(true);
+        m_tabs->setCurrentIndex(m_tabs->count() - 1);
+    };
+    m_radioChip = radioChip;
+    auto *tciChip = new ChipLabel;
+    tciChip->onClick = [this] { editTciServer(); };
+    m_tciChip = tciChip;
 
     m_updateBanner = new QFrame;
     m_updateBanner->setObjectName(QStringLiteral("updateBanner"));
     m_updateBanner->setStyleSheet(QStringLiteral(
         "#updateBanner { background: palette(highlight); border-radius: 4px; }"
         "#updateBanner QLabel, #updateBanner QToolButton { color: palette(highlighted-text); }"
-        "#updateBanner QToolButton { border: none; padding: 0 2px; }"));
+        "#updateBanner QToolButton { border: none; background: transparent; padding: 0 2px; }"));
     auto *bannerLayout = new QHBoxLayout(m_updateBanner);
     bannerLayout->setContentsMargins(8, 1, 2, 1);
     bannerLayout->setSpacing(4);
@@ -567,14 +809,53 @@ QWidget *MainWindow::createConnectionBar()
     bannerLayout->addWidget(m_updateLabel);
     bannerLayout->addWidget(dismiss);
     m_updateBanner->hide();
-    layout->addSpacing(6);
-    layout->addWidget(m_updateBanner);
-    layout->addStretch();
 
-    refreshPorts();
-    return bar;
+    // Passing messages (what the status bar used to show). Ignored width, so
+    // a long one never widens the window.
+    m_message = new QLabel;
+    m_message->setProperty("dim", true);
+    m_message->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    m_messageTimer.setSingleShot(true);
+    m_messageTimer.setInterval(kMessageTimeoutMs);
+    connect(&m_messageTimer, &QTimer::timeout, m_message, &QLabel::clear);
+
+    m_lockButton = createToggle(tr("LOCK"), tr("Lock the radio's tuning controls"), &Radio::setLock);
+    m_fineButton = createToggle(tr("FINE"), tr("Fine tuning, as the radio's FINE key"), &Radio::setFineTuning);
+
+    m_tabsButton = new QPushButton(tr("Tabs"));
+    m_tabsButton->setCheckable(true);
+    m_tabsButton->setToolTip(tr("Show or hide the CW, QRZ, Equalizer, Menu and Setup tabs"));
+    connect(m_tabsButton, &QPushButton::clicked, this, [this](bool on) { setTabsVisible(on); });
+    auto *viewButton = new QPushButton(tr("View"));
+    viewButton->setToolTip(tr("Switch between the tabs below the controls and the tabs beside them"));
+    connect(viewButton, &QPushButton::clicked, this, [this] {
+        setArrangement(m_arrangement == Arrangement::Below ? Arrangement::Side : Arrangement::Below);
+    });
+    auto *miniButton = new QPushButton(tr("Mini"));
+    miniButton->setToolTip(tr("Mini window (%1)").arg(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_M)
+                                                           .toString(QKeySequence::NativeText)));
+    connect(miniButton, &QPushButton::clicked, this, [this] { setMiniMode(true); });
+
+    auto *line = new QWidget;
+    auto *layout = new QHBoxLayout(line);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(6);
+    layout->addWidget(m_powerButton);
+    layout->addWidget(m_radioChip);
+    layout->addWidget(m_tciChip);
+    layout->addWidget(m_updateBanner);
+    layout->addWidget(m_message, 1);
+    layout->addWidget(m_lockButton);
+    layout->addWidget(m_fineButton);
+    layout->addSpacing(8);
+    layout->addWidget(m_tabsButton);
+    layout->addWidget(viewButton);
+    layout->addWidget(miniButton);
+    return line;
 }
 
+// The header: the VFO window with the controls that act on the frequency,
+// and the meter with the antenna controls under it.
 QWidget *MainWindow::createVfoPanel()
 {
     m_vfoA = new FrequencyDisplay(kVfoAPointSize);
@@ -586,13 +867,13 @@ QWidget *MainWindow::createVfoPanel()
 
     m_vfoButtons = new QButtonGroup(this);
     m_vfoButtons->setExclusive(true);
-    auto *vfoRow = new QHBoxLayout;
+    QList<QAbstractButton *> vfoButtons;
     for (Vfo vfo : {Vfo::A, Vfo::B}) {
         auto *button = new QPushButton(vfo == Vfo::A ? QStringLiteral("A") : QStringLiteral("B"));
         button->setCheckable(true);
         button->setToolTip(tr("Receive and transmit on VFO %1").arg(button->text()));
         m_vfoButtons->addButton(button, int(vfo));
-        vfoRow->addWidget(button);
+        vfoButtons << button;
         m_radioControls << button;
     }
     connect(m_vfoButtons, &QButtonGroup::idClicked, this, [this](int id) { m_radio.selectVfo(Vfo(id)); });
@@ -604,467 +885,8 @@ QWidget *MainWindow::createVfoPanel()
     auto *copyButton = new QPushButton(tr("A=B"));
     copyButton->setToolTip(tr("Copy the receive VFO's frequency and mode to the other VFO"));
     connect(copyButton, &QPushButton::clicked, &m_radio, &Radio::copyVfo);
-    vfoRow->addSpacing(8);
-    vfoRow->addWidget(m_splitButton);
-    vfoRow->addWidget(copyButton);
     m_radioControls << m_splitButton << copyButton;
 
-    m_vfoStatus = new QLabel;
-    m_txIndicator = new QLabel(tr(" TX "));
-    m_txIndicator->setAlignment(Qt::AlignCenter);
-    // Enabled == transmitting; the disabled look reads as "off".
-    m_txIndicator->setStyleSheet(QStringLiteral(
-        "QLabel { border-radius: 4px; padding: 2px 6px; font-weight: bold; color: white; background: #c0392b; }"
-        "QLabel:disabled { color: palette(mid); background: transparent; border: 1px solid palette(mid); }"));
-    m_txIndicator->setEnabled(false);
-
-    // Peak readout at half the size of the main VFO digits.
-    m_sMeter = new SMeter(kVfoAPointSize / 2);
-
-    // One inset box, like a display window: VFO A on top, VFO B below it,
-    // then the VFO buttons.
-    auto *buttonRow = new QHBoxLayout;
-    buttonRow->addLayout(vfoRow);
-    buttonRow->addWidget(m_vfoStatus);
-    buttonRow->addStretch();
-    buttonRow->addWidget(m_txIndicator);
-
-    auto *vfoBox = new QFrame;
-    vfoBox->setFrameShape(QFrame::StyledPanel);
-    vfoBox->setFrameShadow(QFrame::Sunken);
-    vfoBox->setAutoFillBackground(true);
-    vfoBox->setBackgroundRole(QPalette::Base);
-    auto *boxLayout = new QVBoxLayout(vfoBox);
-    boxLayout->setContentsMargins(4, 4, 8, 6);
-    boxLayout->setSpacing(2);
-    boxLayout->addWidget(m_vfoA);
-    boxLayout->addWidget(m_vfoB);
-    boxLayout->addSpacing(4);
-    boxLayout->addLayout(buttonRow);
-    boxLayout->addStretch();
-
-    // Antenna selection (AN): ANT1/ANT2, the separate RX antenna input, and
-    // the DRV output (antenna out on an SG whose menu 085 is set to ANT).
-    m_antennaButton = new QPushButton(QStringLiteral("ANT1"));
-    m_antennaButton->setToolTip(tr("Switch between ANT1 and ANT2"));
-    connect(m_antennaButton, &QPushButton::clicked, this,
-            [this] { m_radio.setAntenna(m_radio.antenna() == 1 ? 2 : 1); });
-    m_rxAntennaButton = new QPushButton(tr("RX ANT"));
-    m_rxAntennaButton->setCheckable(true);
-    m_rxAntennaButton->setToolTip(tr("Receive on the RX ANT input"));
-    connect(m_rxAntennaButton, &QPushButton::clicked, &m_radio, &Radio::setRxAntenna);
-    m_driveOutButton = new QPushButton(tr("DRV"));
-    m_driveOutButton->setCheckable(true);
-    m_driveOutButton->setToolTip(tr("Drive output (or antenna output, per menu 085)"));
-    connect(m_driveOutButton, &QPushButton::clicked, &m_radio, &Radio::setDriveOut);
-    m_tunerButton = new QPushButton(tr("AT"));
-    m_tunerButton->setCheckable(true);
-    m_tunerButton->setToolTip(tr("Internal antenna tuner in line (does not start a tune)"));
-    connect(m_tunerButton, &QPushButton::clicked, &m_radio, &Radio::setTuner);
-    m_tuneCycleButton = new QPushButton(tr("ATun"));
-    m_tuneCycleButton->setCheckable(true);
-    m_tuneCycleButton->setToolTip(tr("Run an antenna tuner cycle (transmits while tuning; click again to stop)"));
-    connect(m_tuneCycleButton, &QPushButton::clicked, this, [this](bool on) {
-        m_radio.setTunerTuning(on);
-        refreshAntenna();   // lit only once the radio reports it's tuning
-    });
-
-    auto *antennaRow = new QHBoxLayout;
-    for (QPushButton *button :
-         {m_antennaButton, m_rxAntennaButton, m_driveOutButton, m_tunerButton, m_tuneCycleButton}) {
-        antennaRow->addWidget(button);
-        m_radioControls << button;
-    }
-    antennaRow->addStretch();
-
-    // Meter level with the top of the VFO box, antenna controls under it.
-    auto *right = new QVBoxLayout;
-    right->setContentsMargins(0, 2, 0, 0);
-    right->addWidget(m_sMeter);
-    right->addLayout(antennaRow);
-    right->addStretch();
-
-    auto *panel = new QWidget;
-    auto *layout = new QHBoxLayout(panel);
-    layout->setContentsMargins(0, 0, 0, 0);
-    layout->addWidget(vfoBox, 3);
-    layout->addLayout(right, 2);
-    m_radioControls << m_vfoA << m_vfoB;
-    return panel;
-}
-
-QWidget *MainWindow::createModeBar()
-{
-    m_modeButtons = new QButtonGroup(this);
-    m_modeButtons->setExclusive(true);
-
-    auto *bar = new QWidget;
-    auto *layout = new QHBoxLayout(bar);
-    layout->setContentsMargins(0, 0, 0, 0);
-    for (Mode mode : kModes) {
-        auto *button = new QPushButton(modeName(mode));
-        button->setCheckable(true);
-        m_modeButtons->addButton(button, int(mode));
-        layout->addWidget(button);
-        m_radioControls << button;
-    }
-    connect(m_modeButtons, &QButtonGroup::idClicked, this, [this](int id) { m_radio.setMode(Mode(id)); });
-
-    m_dataCheck = new QCheckBox(tr("DATA"));
-    m_dataCheck->setToolTip(tr("Data mode (LSB/USB/FM/AM only)"));
-    connect(m_dataCheck, &QCheckBox::clicked, &m_radio, &Radio::setDataMode);
-    layout->addSpacing(12);
-    layout->addWidget(m_dataCheck);
-    layout->addStretch();
-    m_radioControls << m_dataCheck;
-    return bar;
-}
-
-QSlider *MainWindow::createLevelSlider(void (Radio::*setter)(int), int maximum)
-{
-    auto *slider = new QSlider(Qt::Horizontal);
-    slider->setRange(0, maximum);
-    slider->setPageStep(std::max(1, (maximum + 1) / 16));
-    if (maximum < 16) {
-        slider->setTickPosition(QSlider::TicksBelow);
-        slider->setTickInterval(1);
-    }
-    connect(slider, &QSlider::valueChanged, this, [this, setter](int value) {
-        if (!m_applyingRadioState)
-            (m_radio.*setter)(value);
-    });
-    m_radioControls << slider;
-    return slider;
-}
-
-QWidget *MainWindow::createOperatePage()
-{
-    m_afSlider = createLevelSlider(&Radio::setAfGain);
-    m_sqlSlider = createLevelSlider(&Radio::setSquelch);
-    m_rfSlider = createLevelSlider(&Radio::setRfGain);
-    m_usbInSlider = createLevelSlider(&Radio::setUsbAudioIn, kUsbAudioLevelMax);
-    m_usbInSlider->setToolTip(tr("USB audio input level (menu 071): audio from the computer to the transmitter"));
-    m_usbOutSlider = createLevelSlider(&Radio::setUsbAudioOut, kUsbAudioLevelMax);
-    m_usbOutSlider->setToolTip(tr("USB audio output level (menu 072): received audio to the computer"));
-
-    auto *levels = new QGroupBox(tr("Levels"));
-    auto *levelsLayout = new QFormLayout(levels);
-    alignForm(levelsLayout);
-    // One width for every value readout, so the sliders end together too.
-    const int valueWidth = levels->fontMetrics().horizontalAdvance(QStringLiteral("20 ms")) + 6;
-    auto addLevel = [levelsLayout, valueWidth](const QString &name, QSlider *slider) {
-        auto *value = new QLabel(QStringLiteral("0"));
-        value->setFixedWidth(valueWidth);
-        value->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-        connect(slider, &QSlider::valueChanged, value, qOverload<int>(&QLabel::setNum));
-        auto *row = new QHBoxLayout;
-        row->addWidget(slider, 1);
-        row->addWidget(value);
-        levelsLayout->addRow(name, row);
-    };
-    addLevel(tr("AF gain"), m_afSlider);
-    addLevel(tr("Squelch"), m_sqlSlider);
-    {
-        // RF gain row, with the attenuator as a small button in front.
-        m_attenuatorButton = new QPushButton(tr("ATT"));
-        m_attenuatorButton->setCheckable(true);
-        m_attenuatorButton->setToolTip(tr("Click to cycle: attenuator → preamp → off"));
-        const QFontMetrics metrics = m_attenuatorButton->fontMetrics();
-        m_attenuatorButton->setFixedWidth(
-            std::max(metrics.horizontalAdvance(tr("ATT")), metrics.horizontalAdvance(tr("PRE"))) + 20);
-        connect(m_attenuatorButton, &QPushButton::clicked, this, [this] {
-            const bool att = m_radio.attenuator(), pre = m_radio.preamp();
-            if (!att && !pre) {
-                m_radio.setAttenuator(true);
-            } else if (att && !pre) {
-                m_radio.setAttenuator(false);
-                m_radio.setPreamp(true);
-            } else {   // PRE, or both on (set from the panel): all off
-                m_radio.setAttenuator(false);
-                m_radio.setPreamp(false);
-            }
-            refreshFrontEnd();   // undo the button's own toggle until the radio answers
-        });
-        m_radioControls << m_attenuatorButton;
-        auto *value = new QLabel(QStringLiteral("0"));
-        value->setFixedWidth(valueWidth);
-        value->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-        connect(m_rfSlider, &QSlider::valueChanged, value, qOverload<int>(&QLabel::setNum));
-        auto *row = new QHBoxLayout;
-        row->addWidget(m_rfSlider, 1);
-        row->addWidget(value);
-        // ATT sits in the label column so this slider lines up with the rest.
-        auto *label = new QWidget;
-        auto *labelLayout = new QHBoxLayout(label);
-        labelLayout->setContentsMargins(0, 0, 0, 0);
-        labelLayout->addWidget(new QLabel(tr("RF gain")));
-        labelLayout->addWidget(m_attenuatorButton);
-        labelLayout->addStretch();
-        levelsLayout->addRow(label, row);
-    }
-    addLevel(tr("USB in"), m_usbInSlider);
-    addLevel(tr("USB out"), m_usbOutSlider);
-    m_micGainSlider = createLevelSlider(&Radio::setMicGain, kMicGainMax);
-    m_micGainSlider->setToolTip(tr("Microphone gain for SSB and AM (FM mic gain is a menu setting)"));
-    addLevel(tr("Mic gain"), m_micGainSlider);
-
-    // NB / NR: the button steps through the variants like the front-panel
-    // key; the slider sets the level of whichever variant is on.
-    auto createNoiseRow = [this, levelsLayout, valueWidth](QPushButton *&button, QSlider *&slider, QLabel *value) {
-        button = new QPushButton;
-        button->setCheckable(true);
-        button->setMinimumWidth(button->fontMetrics().horizontalAdvance(QStringLiteral("NB1+2")) + 24);
-        slider = new QSlider(Qt::Horizontal);
-        slider->setPageStep(1);
-        slider->setTickPosition(QSlider::TicksBelow);
-        slider->setTickInterval(1);
-        value->setFixedWidth(valueWidth);
-        value->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-        auto *row = new QHBoxLayout;
-        row->addWidget(slider, 1);
-        row->addWidget(value);
-        levelsLayout->addRow(button, row);
-    };
-    // TX monitor: ML has no on/off of its own (0 is off), so the button
-    // sends 0 or the slider's level.
-    auto *monitorValue = new QLabel;
-    createNoiseRow(m_monitorButton, m_monitorSlider, monitorValue);
-    m_monitorButton->setText(tr("MON"));
-    m_monitorButton->setToolTip(tr("TX monitor: hear your own transmit audio"));
-    m_monitorSlider->setRange(1, txMonitorMax(kModelTs590SG));
-    m_monitorSlider->setValue(5);
-    m_monitorSlider->setToolTip(tr("TX monitor level"));
-    connect(m_monitorSlider, &QSlider::valueChanged, monitorValue, qOverload<int>(&QLabel::setNum));
-    monitorValue->setNum(m_monitorSlider->value());
-    connect(m_monitorSlider, &QSlider::valueChanged, this, [this](int level) {
-        if (!m_applyingRadioState && m_radio.txMonitor().value_or(0) > 0)
-            m_radio.setTxMonitor(level);
-    });
-    connect(m_monitorButton, &QPushButton::clicked, this, [this](bool on) {
-        m_radio.setTxMonitor(on ? m_monitorSlider->value() : 0);
-        // Radio caches the new level right away, so the echo won't signal a
-        // change; update the row now.
-        refreshMonitor();
-    });
-
-    auto *nbValue = new QLabel;
-    createNoiseRow(m_nbButton, m_nbSlider, nbValue);
-    m_nbButton->setToolTip(tr("Noise blanker: OFF → NB1 → NB2 → NB1+NB2"));
-    m_nbSlider->setRange(kNbLevelMin, kNbLevelMax);
-    m_nbSlider->setToolTip(tr("Level of the active noise blanker (not adjustable with both on)"));
-    connect(m_nbSlider, &QSlider::valueChanged, nbValue, qOverload<int>(&QLabel::setNum));
-    connect(m_nbSlider, &QSlider::valueChanged, this, [this](int level) {
-        if (!m_applyingRadioState)
-            m_radio.setNbLevel(level);
-    });
-    connect(m_nbButton, &QPushButton::clicked, this, [this] {
-        static constexpr NoiseBlanker next[] = {NoiseBlanker::NB1, NoiseBlanker::NB2, NoiseBlanker::Both,
-                                                NoiseBlanker::Off};
-        m_radio.setNoiseBlanker(next[int(m_radio.noiseBlanker())]);
-        refreshNoise();   // undo the button's own toggle until the radio answers
-    });
-
-    m_nrValue = new QLabel;
-    createNoiseRow(m_nrButton, m_nrSlider, m_nrValue);
-    m_nrButton->setToolTip(tr("Noise reduction: OFF → NR1 → NR2 (NR2 not in FM)"));
-    m_nrSlider->setToolTip(tr("NR1: reduction level. NR2: SPAC follow speed."));
-    connect(m_nrSlider, &QSlider::valueChanged, this, [this](int level) {
-        m_nrValue->setText(nrLevelText(m_radio.noiseReduction(), level));
-        if (!m_applyingRadioState)
-            m_radio.setNrLevel(level);
-    });
-    connect(m_nrButton, &QPushButton::clicked, this, [this] {
-        NoiseReduction next = NoiseReduction::Off;
-        if (m_radio.noiseReduction() == NoiseReduction::Off)
-            next = NoiseReduction::NR1;
-        else if (m_radio.noiseReduction() == NoiseReduction::NR1 && nr2Supported(m_radio.mode()))
-            next = NoiseReduction::NR2;
-        m_radio.setNoiseReduction(next);
-        refreshNoise();
-    });
-
-    // AGC: OFF -> SLOW -> FAST -> OFF. Slow and fast each keep their own time
-    // constant, so the slider shows whichever is active.
-    m_agcValue = new QLabel;
-    createNoiseRow(m_agcButton, m_agcSlider, m_agcValue);
-    m_agcButton->setToolTip(tr("AGC: OFF → SLOW → FAST (not available in FM)"));
-    m_agcSlider->setRange(kAgcTimeMin, kAgcTimeMax);
-    m_agcSlider->setToolTip(tr("AGC time constant for the active mode (slow or fast)"));
-    connect(m_agcSlider, &QSlider::valueChanged, this, [this](int value) {
-        if (m_radio.agc() != Agc::Off)
-            m_agcValue->setNum(value);
-        if (!m_applyingRadioState)
-            m_radio.setAgcTimeConstant(value);
-    });
-    connect(m_agcButton, &QPushButton::clicked, this, [this] {
-        static constexpr Agc next[] = {Agc::Slow, Agc::Fast, Agc::Off};
-        m_radio.setAgc(next[int(m_radio.agc())]);
-        refreshAgc();   // undo the button's own toggle until the radio answers
-    });
-
-    m_filterA = new QRadioButton(tr("Filter A"));
-    m_filterB = new QRadioButton(tr("Filter B"));
-    connect(m_filterA, &QRadioButton::clicked, this, [this] { m_radio.setFilterSlot(FilterSlot::A); });
-    connect(m_filterB, &QRadioButton::clicked, this, [this] { m_radio.setFilterSlot(FilterSlot::B); });
-    m_radioControls << m_filterA << m_filterB;
-
-    auto *filters = new QGroupBox(tr("IF Filter"));
-    auto *filterLayout = new QGridLayout(filters);
-    auto *slotRow = new QHBoxLayout;
-    slotRow->addWidget(m_filterA);
-    slotRow->addWidget(m_filterB);
-    slotRow->addStretch();
-    filterLayout->addLayout(slotRow, 0, 0, 1, 2);
-    for (int i = 0; i < 2; ++i) {
-        m_filterLabels[i] = new QLabel;
-        m_filterCombos[i] = new QComboBox;
-        connect(m_filterCombos[i], &QComboBox::activated, this, [this, i](int index) {
-            const FilterControl &control = i == 0 ? m_filterLayout.first : m_filterLayout.second;
-            m_radio.setFilterValue(control.command, filterRawForIndex(control, index));
-        });
-        filterLayout->addWidget(m_filterLabels[i], i + 1, 0);
-        filterLayout->addWidget(m_filterCombos[i], i + 1, 1);
-        m_radioControls << m_filterCombos[i];
-    }
-    filterLayout->setColumnStretch(1, 1);
-    filterLayout->setRowStretch(3, 1);
-
-    auto *right = new QVBoxLayout;
-    right->addWidget(createRitXitGroup());
-    right->addWidget(createTransmitGroup(), 1);
-
-    auto *middle = new QVBoxLayout;
-    middle->addWidget(filters);
-    middle->addWidget(createTxFilterGroup());
-    middle->addWidget(createNotchGroup());
-    middle->addLayout(createPanelToggles());
-    middle->addStretch();
-
-    auto *page = new QWidget;
-    auto *layout = new QHBoxLayout(page);
-    layout->addWidget(levels, 3);
-    layout->addLayout(middle, 2);
-    layout->addLayout(right, 2);
-    return page;
-}
-
-QWidget *MainWindow::createTxFilterGroup()
-{
-    auto *group = new QGroupBox(tr("TX Filter"));
-    group->setToolTip(tr("Transmit audio filters (menus 031–034). SSB settings also apply to AM."));
-    auto *layout = new QGridLayout(group);
-    layout->addWidget(new QLabel(tr("Low cut")), 0, 1);
-    layout->addWidget(new QLabel(tr("High cut")), 0, 2);
-    layout->addWidget(new QLabel(tr("SSB/AM")), 1, 0);
-    layout->addWidget(new QLabel(tr("SSB-DATA")), 2, 0);
-    for (int i = 0; i < kTxFilterCount; ++i) {
-        const auto filter = TxFilter(i);
-        auto *combo = new QComboBox;
-        for (int hz : txFilterValuesHz(filter))
-            combo->addItem(tr("%1 Hz").arg(hz));
-        combo->setCurrentIndex(-1);
-        connect(combo, &QComboBox::activated, this, [this, filter](int index) { m_radio.setTxFilter(filter, index); });
-        // TxFilter order: low/high for SSB, then low/high for SSB-DATA.
-        layout->addWidget(combo, 1 + i / 2, 1 + i % 2);
-        m_txFilterCombos[i] = combo;
-        m_radioControls << combo;
-    }
-    layout->setColumnStretch(1, 1);
-    layout->setColumnStretch(2, 1);
-    return group;
-}
-
-QWidget *MainWindow::createNotchGroup()
-{
-    m_beatCancelButton = new QPushButton(tr("BC"));
-    m_beatCancelButton->setCheckable(true);
-    m_beatCancelButton->setToolTip(tr("Beat cancel: OFF → BC1 → BC2 → OFF. BC1 removes a steady beat, "
-                                      "BC2 several or keyed ones. Not in CW or FSK."));
-    connect(m_beatCancelButton, &QPushButton::clicked, this, [this] {
-        static constexpr BeatCancel next[] = {BeatCancel::BC1, BeatCancel::BC2, BeatCancel::Off};
-        m_radio.setBeatCancel(next[int(m_radio.beatCancel())]);
-        refreshBeatCancel();   // undo the button's own toggle until the radio answers
-    });
-    m_radioControls << m_beatCancelButton;
-
-    m_autoNotchButton = new QPushButton(tr("AUTO"));
-    m_autoNotchButton->setCheckable(true);
-    m_autoNotchButton->setToolTip(tr("Auto notch: tracks and removes a carrier"));
-    connect(m_autoNotchButton, &QPushButton::clicked, this, [this](bool on) {
-        m_radio.setNotch(on ? NotchMode::Auto : NotchMode::Off, m_notchWideCheck->isChecked());
-    });
-    m_manualNotchButton = new QPushButton(tr("MANUAL"));
-    m_manualNotchButton->setCheckable(true);
-    m_manualNotchButton->setToolTip(tr("Manual notch at the position set below"));
-    connect(m_manualNotchButton, &QPushButton::clicked, this, [this](bool on) {
-        m_radio.setNotch(on ? NotchMode::Manual : NotchMode::Off, m_notchWideCheck->isChecked());
-    });
-    m_notchWideCheck = new QCheckBox(tr("Wide"));
-    m_notchWideCheck->setToolTip(tr("Manual notch bandwidth"));
-    connect(m_notchWideCheck, &QCheckBox::clicked, this,
-            [this](bool wide) { m_radio.setNotch(NotchMode::Manual, wide); });
-
-    m_notchSlider = new QSlider(Qt::Horizontal);
-    m_notchSlider->setRange(0, kNotchPositionMax);
-    m_notchSlider->setPageStep(8);
-    m_notchSlider->setToolTip(tr("Manual notch frequency (radio scale 0–127)"));
-    connect(m_notchSlider, &QSlider::valueChanged, this, [this](int position) {
-        if (!m_applyingRadioState)
-            m_radio.setNotchPosition(position);
-    });
-    auto *value = new QLabel(QStringLiteral("0"));
-    value->setMinimumWidth(value->fontMetrics().horizontalAdvance(QStringLiteral("127")) + 4);
-    value->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    connect(m_notchSlider, &QSlider::valueChanged, value, qOverload<int>(&QLabel::setNum));
-
-    auto *group = new QGroupBox(tr("Beat Cancel / Notch"));
-    auto *layout = new QGridLayout(group);
-    layout->addWidget(m_beatCancelButton, 0, 0);
-    layout->addWidget(m_autoNotchButton, 0, 1);
-    layout->addWidget(m_manualNotchButton, 0, 2);
-    layout->addWidget(m_notchWideCheck, 0, 3);
-    auto *row = new QHBoxLayout;
-    row->addWidget(m_notchSlider, 1);
-    row->addWidget(value);
-    layout->addLayout(row, 1, 0, 1, 4);
-    return group;
-}
-
-QLayout *MainWindow::createPanelToggles()
-{
-    auto toggle = [this](const QString &text, const QString &tip, void (Radio::*setter)(bool)) {
-        auto *button = new QPushButton(text);
-        button->setCheckable(true);
-        button->setToolTip(tip);
-        connect(button, &QPushButton::clicked, this, [this, setter](bool on) {
-            (m_radio.*setter)(on);
-            refreshPanelToggles();   // show the radio's state until it answers
-        });
-        m_radioControls << button;
-        return button;
-    };
-    m_lockButton = toggle(tr("LOCK"), tr("Lock the radio's tuning controls"), &Radio::setLock);
-    m_muteButton = toggle(tr("MUTE"),
-                          tr("Mute the received audio: the speaker and the USB audio output to the computer "
-                             "and TCI programs. Turning it off puts the USB output level back."),
-                          &Radio::setMute);
-    // Red while muted, like SEND; the native look otherwise.
-    m_muteButton->setObjectName(QStringLiteral("muteButton"));
-    m_muteButton->setStyleSheet(QStringLiteral(
-        "#muteButton:checked { background: #e74c3c; color: white; font-weight: bold;"
-        "  border: 1px solid #c0392b; border-radius: 5px; padding: 3px 12px; }"));
-    m_fineButton = toggle(tr("FINE"), tr("Fine tuning, as the radio's FINE key"), &Radio::setFineTuning);
-
-    auto *row = new QHBoxLayout;
-    row->addWidget(m_lockButton);
-    row->addWidget(m_muteButton);
-    row->addWidget(m_fineButton);
-    row->addStretch();
-    return row;
-}
-
-QWidget *MainWindow::createRitXitGroup()
-{
     m_ritButton = new QPushButton(tr("RIT"));
     m_ritButton->setCheckable(true);
     m_ritButton->setToolTip(tr("Receive incremental tuning"));
@@ -1091,95 +913,452 @@ QWidget *MainWindow::createRitXitGroup()
         m_offsetHold.start();
         m_radio.setRitXitOffset(hz);
     });
-
-    m_clearOffsetButton = new QPushButton(tr("CLEAR"));
+    m_clearOffsetButton = new QPushButton(tr("CLR"));
     m_clearOffsetButton->setToolTip(tr("Set the RIT/XIT offset to 0"));
     connect(m_clearOffsetButton, &QPushButton::clicked, this, [this] { m_offsetSpin->setValue(0); });
 
-    auto *group = new QGroupBox(tr("RIT / XIT"));
-    auto *layout = new QGridLayout(group);
-    layout->addWidget(m_ritButton, 0, 0);
-    layout->addWidget(m_xitButton, 0, 1);
-    layout->addWidget(m_offsetSpin, 1, 0);
-    layout->addWidget(m_clearOffsetButton, 1, 1);
-    return group;
+    m_vfoStatus = new QLabel;
+    m_vfoStatus->setProperty("dim", true);
+    // Enabled == transmitting; the disabled look reads as "off".
+    m_txIndicator = new QLabel(tr(" TX "));
+    m_txIndicator->setObjectName(QStringLiteral("txIndicator"));
+    m_txIndicator->setAlignment(Qt::AlignCenter);
+    m_txIndicator->setEnabled(false);
+
+    auto *vfoRow = new QHBoxLayout;
+    vfoRow->setSpacing(6);
+    vfoRow->addLayout(createSegment(vfoButtons));
+    vfoRow->addWidget(m_splitButton);
+    vfoRow->addWidget(copyButton);
+    vfoRow->addStretch();
+    auto *offsetRow = new QHBoxLayout;
+    offsetRow->setSpacing(6);
+    offsetRow->addWidget(m_ritButton);
+    offsetRow->addWidget(m_xitButton);
+    offsetRow->addWidget(m_offsetSpin);
+    offsetRow->addWidget(m_clearOffsetButton);
+    auto *statusRow = new QHBoxLayout;
+    statusRow->addWidget(m_vfoStatus);
+    statusRow->addStretch();
+    statusRow->addWidget(m_txIndicator);
+    auto *buttons = new QVBoxLayout;
+    buttons->setSpacing(6);
+    buttons->addStretch();
+    buttons->addLayout(vfoRow);
+    buttons->addLayout(offsetRow);
+    buttons->addLayout(statusRow);
+    buttons->addStretch();
+
+    auto *digits = new QVBoxLayout;
+    digits->setSpacing(0);
+    digits->addStretch();
+    digits->addWidget(m_vfoA);
+    digits->addWidget(m_vfoB);
+    digits->addStretch();
+
+    QFrame *vfoBox = createPanel("vfo");
+    auto *boxLayout = new QHBoxLayout(vfoBox);
+    boxLayout->setContentsMargins(4, 4, 10, 4);
+    boxLayout->setSpacing(12);
+    boxLayout->addLayout(digits, 1);
+    boxLayout->addLayout(buttons);
+
+    // Peak readout at half the size of the main VFO digits.
+    m_sMeter = new SMeter(kVfoAPointSize / 2);
+
+    // Antenna selection (AN): ANT1/ANT2, the separate RX antenna input, and
+    // the DRV output (antenna out on an SG whose menu 085 is set to ANT).
+    m_antennaButtons = new QButtonGroup(this);
+    m_antennaButtons->setExclusive(true);
+    QList<QAbstractButton *> antennaButtons;
+    for (int antenna : {1, 2}) {
+        auto *button = new QPushButton(QString::number(antenna));
+        button->setCheckable(true);
+        button->setToolTip(tr("Use the ANT %1 connector").arg(antenna));
+        m_antennaButtons->addButton(button, antenna);
+        antennaButtons << button;
+        m_radioControls << button;
+    }
+    connect(m_antennaButtons, &QButtonGroup::idClicked, this, [this](int antenna) {
+        m_radio.setAntenna(antenna);
+        refreshAntenna();   // the highlight follows the radio, not the click
+    });
+    m_rxAntennaButton = new QPushButton(tr("RX ANT"));
+    m_rxAntennaButton->setCheckable(true);
+    m_rxAntennaButton->setToolTip(tr("Receive on the RX ANT input"));
+    connect(m_rxAntennaButton, &QPushButton::clicked, &m_radio, &Radio::setRxAntenna);
+    m_driveOutButton = new QPushButton(tr("DRV"));
+    m_driveOutButton->setCheckable(true);
+    m_driveOutButton->setToolTip(tr("Drive output (or antenna output, per menu 085)"));
+    connect(m_driveOutButton, &QPushButton::clicked, &m_radio, &Radio::setDriveOut);
+    m_tunerButton = new QPushButton(tr("AT"));
+    m_tunerButton->setCheckable(true);
+    m_tunerButton->setToolTip(tr("Internal antenna tuner in line (does not start a tune)"));
+    connect(m_tunerButton, &QPushButton::clicked, &m_radio, &Radio::setTuner);
+    m_tuneCycleButton = new QPushButton(tr("AT TUNE"));
+    m_tuneCycleButton->setCheckable(true);
+    m_tuneCycleButton->setToolTip(tr("Run an antenna tuner cycle (transmits while tuning; click again to stop)"));
+    connect(m_tuneCycleButton, &QPushButton::clicked, this, [this](bool on) {
+        m_radio.setTunerTuning(on);
+        refreshAntenna();   // lit only once the radio reports it's tuning
+    });
+    m_radioControls << m_rxAntennaButton << m_driveOutButton << m_tunerButton << m_tuneCycleButton;
+
+    auto *antennaLabel = new QLabel(tr("ANT"));
+    antennaLabel->setProperty("dim", true);
+    auto *antennaRow = new QHBoxLayout;
+    antennaRow->setSpacing(5);
+    antennaRow->addWidget(antennaLabel);
+    antennaRow->addLayout(createSegment(antennaButtons));
+    antennaRow->addWidget(m_rxAntennaButton);
+    antennaRow->addWidget(m_driveOutButton);
+    antennaRow->addStretch();
+    antennaRow->addWidget(m_tunerButton);
+    antennaRow->addWidget(m_tuneCycleButton);
+
+    QFrame *meterBox = createPanel();
+    auto *meterLayout = new QVBoxLayout(meterBox);
+    meterLayout->setContentsMargins(10, 8, 10, 8);
+    meterLayout->setSpacing(6);
+    meterLayout->addWidget(m_sMeter, 1);
+    meterLayout->addLayout(antennaRow);
+
+    auto *panel = new QWidget;
+    auto *layout = new QHBoxLayout(panel);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(8);
+    layout->addWidget(vfoBox, 3);
+    layout->addWidget(meterBox, 2);
+    m_radioControls << m_vfoA << m_vfoB;
+    return panel;
 }
 
-QWidget *MainWindow::createTransmitGroup()
+// Bands and modes on one row, always in view.
+QWidget *MainWindow::createBandModeRow()
 {
-    auto createPowerSlider = [this](void (Radio::*setter)(int)) {
-        auto *slider = new QSlider(Qt::Horizontal);
-        slider->setRange(kTxPowerMin, kTxPowerMax);
-        connect(slider, &QSlider::valueChanged, this, [this, setter](int watts) {
-            if (!m_applyingRadioState)
-                (m_radio.*setter)(watts);
-        });
-        m_radioControls << slider;
-        return slider;
+    m_bandButtons = new QButtonGroup(this);
+    m_bandButtons->setExclusive(true);
+    QList<QAbstractButton *> bandButtons;
+    for (int band = 0; band < kBandCount; ++band) {
+        // "160 m" is "160" here; the general coverage band has no wavelength.
+        const QString wavelength = bandWavelength(band);
+        auto *button = new QPushButton(wavelength.isEmpty() ? tr("GEN") : wavelength.section(QLatin1Char(' '), 0, 0));
+        button->setCheckable(true);
+        button->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        button->setToolTip((wavelength.isEmpty() ? tr("General coverage")
+                                                 : tr("%1 band (%2 MHz)").arg(wavelength, bandLabel(band)))
+                           + tr(". Click the current band again to step through its band memories."));
+        m_bandButtons->addButton(button, band);
+        bandButtons << button;
+        m_radioControls << button;
+    }
+    connect(m_bandButtons, &QButtonGroup::idClicked, this, [this](int band) {
+        m_radio.selectBand(band);
+        refreshBand();   // the highlight follows the radio's frequency, not the click
+    });
+
+    m_modeButtons = new QButtonGroup(this);
+    m_modeButtons->setExclusive(true);
+    QList<QAbstractButton *> modeButtons;
+    for (Mode mode : kModes) {
+        auto *button = new QPushButton(modeName(mode));
+        button->setCheckable(true);
+        button->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        m_modeButtons->addButton(button, int(mode));
+        modeButtons << button;
+        m_radioControls << button;
+    }
+    connect(m_modeButtons, &QButtonGroup::idClicked, this, [this](int id) { m_radio.setMode(Mode(id)); });
+
+    m_dataButton = new QPushButton(tr("DATA"));
+    m_dataButton->setCheckable(true);
+    m_dataButton->setToolTip(tr("Data mode (LSB/USB/FM/AM only)"));
+    connect(m_dataButton, &QPushButton::clicked, &m_radio, &Radio::setDataMode);
+    m_radioControls << m_dataButton;
+
+    auto *row = new QWidget;
+    auto *layout = new QHBoxLayout(row);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(6);
+    layout->addLayout(createSegment(bandButtons), kBandCount);
+    layout->addSpacing(6);
+    layout->addLayout(createSegment(modeButtons), int(kModes.size()));
+    layout->addWidget(m_dataButton);
+    return row;
+}
+
+QSlider *MainWindow::createLevelSlider(void (Radio::*setter)(int), int maximum)
+{
+    auto *slider = new QSlider(Qt::Horizontal);
+    slider->setRange(0, maximum);
+    slider->setPageStep(std::max(1, (maximum + 1) / 16));
+    connect(slider, &QSlider::valueChanged, this, [this, setter](int value) {
+        if (!m_applyingRadioState)
+            (m_radio.*setter)(value);
+    });
+    m_radioControls << slider;
+    return slider;
+}
+
+QSlider *MainWindow::createPowerSlider(void (Radio::*setter)(int))
+{
+    auto *slider = new QSlider(Qt::Horizontal);
+    slider->setRange(kTxPowerMin, kTxPowerMax);
+    connect(slider, &QSlider::valueChanged, this, [this, setter](int watts) {
+        if (!m_applyingRadioState)
+            (m_radio.*setter)(watts);
+    });
+    m_radioControls << slider;
+    return slider;
+}
+
+// The three operating panels: Receive, Filter and Notch, Transmit.
+QWidget *MainWindow::createOperatePanels()
+{
+    auto *row = new QWidget;
+    auto *layout = new QHBoxLayout(row);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(8);
+    layout->addWidget(createReceivePanel(), 10);
+    layout->addWidget(createFilterPanel(), 9);
+    layout->addWidget(createTransmitPanel(), 9);
+    return row;
+}
+
+QWidget *MainWindow::createReceivePanel()
+{
+    m_afSlider = createLevelSlider(&Radio::setAfGain);
+    m_afSlider->setToolTip(tr("AF gain: speaker volume"));
+    m_sqlSlider = createLevelSlider(&Radio::setSquelch);
+    m_sqlSlider->setToolTip(tr("Squelch"));
+    m_rfSlider = createLevelSlider(&Radio::setRfGain);
+    m_rfSlider->setToolTip(tr("RF gain"));
+
+    const QFontMetrics metrics = fontMetrics();
+    RowGrid rows(metrics.horizontalAdvance(QStringLiteral("NB1+2")) + 22,
+                 metrics.horizontalAdvance(QStringLiteral("20 ms")) + 6);
+
+    m_muteButton = createToggle(tr("MUTE"),
+                                tr("Mute the received audio: the speaker and the USB audio output to the computer "
+                                   "and TCI programs. Turning it off puts the USB output level back."),
+                                &Radio::setMute);
+    m_muteButton->setObjectName(QStringLiteral("muteButton"));   // red while muted, like SEND
+    rows.addNumber(tr("AF"), m_afSlider, m_muteButton);
+
+    // The attenuator and preamp share one button beside RF gain.
+    m_attenuatorButton = new QPushButton(tr("ATT"));
+    m_attenuatorButton->setCheckable(true);
+    m_attenuatorButton->setToolTip(tr("Click to cycle: attenuator → preamp → off"));
+    connect(m_attenuatorButton, &QPushButton::clicked, this, [this] {
+        const bool att = m_radio.attenuator(), pre = m_radio.preamp();
+        if (!att && !pre) {
+            m_radio.setAttenuator(true);
+        } else if (att && !pre) {
+            m_radio.setAttenuator(false);
+            m_radio.setPreamp(true);
+        } else {   // PRE, or both on (set from the panel): all off
+            m_radio.setAttenuator(false);
+            m_radio.setPreamp(false);
+        }
+        refreshFrontEnd();   // undo the button's own toggle until the radio answers
+    });
+    m_radioControls << m_attenuatorButton;
+    rows.addNumber(tr("RF"), m_rfSlider, m_attenuatorButton);
+    rows.addNumber(tr("SQL"), m_sqlSlider);
+
+    // AGC, NB and NR: the button steps through the variants like the
+    // front-panel key; the slider sets the level of whichever is on.
+    auto createStepRow = [&rows](QPushButton *&button, QSlider *&slider, QLabel *value) {
+        button = new QPushButton;
+        button->setCheckable(true);
+        slider = new QSlider(Qt::Horizontal);
+        slider->setPageStep(1);
+        rows.add(button, slider, value);
     };
+
+    // AGC: OFF -> SLOW -> FAST -> OFF. Slow and fast each keep their own time
+    // constant, so the slider shows whichever is active.
+    m_agcValue = new QLabel;
+    createStepRow(m_agcButton, m_agcSlider, m_agcValue);
+    m_agcButton->setToolTip(tr("AGC: OFF → SLOW → FAST (not available in FM)"));
+    m_agcSlider->setRange(kAgcTimeMin, kAgcTimeMax);
+    m_agcSlider->setToolTip(tr("AGC time constant for the active mode (slow or fast)"));
+    connect(m_agcSlider, &QSlider::valueChanged, this, [this](int value) {
+        if (m_radio.agc() != Agc::Off)
+            m_agcValue->setNum(value);
+        if (!m_applyingRadioState)
+            m_radio.setAgcTimeConstant(value);
+    });
+    connect(m_agcButton, &QPushButton::clicked, this, [this] {
+        static constexpr Agc next[] = {Agc::Slow, Agc::Fast, Agc::Off};
+        m_radio.setAgc(next[int(m_radio.agc())]);
+        refreshAgc();   // undo the button's own toggle until the radio answers
+    });
+
+    auto *nbValue = new QLabel;
+    createStepRow(m_nbButton, m_nbSlider, nbValue);
+    m_nbButton->setToolTip(tr("Noise blanker: OFF → NB1 → NB2 → NB1+NB2"));
+    m_nbSlider->setRange(kNbLevelMin, kNbLevelMax);
+    m_nbSlider->setToolTip(tr("Level of the active noise blanker (not adjustable with both on)"));
+    connect(m_nbSlider, &QSlider::valueChanged, nbValue, qOverload<int>(&QLabel::setNum));
+    connect(m_nbSlider, &QSlider::valueChanged, this, [this](int level) {
+        if (!m_applyingRadioState)
+            m_radio.setNbLevel(level);
+    });
+    connect(m_nbButton, &QPushButton::clicked, this, [this] {
+        static constexpr NoiseBlanker next[] = {NoiseBlanker::NB1, NoiseBlanker::NB2, NoiseBlanker::Both,
+                                                NoiseBlanker::Off};
+        m_radio.setNoiseBlanker(next[int(m_radio.noiseBlanker())]);
+        refreshNoise();   // undo the button's own toggle until the radio answers
+    });
+
+    m_nrValue = new QLabel;
+    createStepRow(m_nrButton, m_nrSlider, m_nrValue);
+    m_nrButton->setToolTip(tr("Noise reduction: OFF → NR1 → NR2 (NR2 not in FM)"));
+    m_nrSlider->setToolTip(tr("NR1: reduction level. NR2: SPAC follow speed."));
+    connect(m_nrSlider, &QSlider::valueChanged, this, [this](int level) {
+        m_nrValue->setText(nrLevelText(m_radio.noiseReduction(), level));
+        if (!m_applyingRadioState)
+            m_radio.setNrLevel(level);
+    });
+    connect(m_nrButton, &QPushButton::clicked, this, [this] {
+        NoiseReduction next = NoiseReduction::Off;
+        if (m_radio.noiseReduction() == NoiseReduction::Off)
+            next = NoiseReduction::NR1;
+        else if (m_radio.noiseReduction() == NoiseReduction::NR1 && nr2Supported(m_radio.mode()))
+            next = NoiseReduction::NR2;
+        m_radio.setNoiseReduction(next);
+        refreshNoise();
+    });
+
+    QFrame *panel = createPanel();
+    auto *layout = new QVBoxLayout(panel);
+    layout->setContentsMargins(10, 8, 10, 8);
+    layout->setSpacing(4);
+    layout->addWidget(createHeading(tr("Receive")));
+    layout->addLayout(rows.layout());
+    layout->addStretch();
+    return panel;
+}
+
+QWidget *MainWindow::createFilterPanel()
+{
+    m_filterA = new QPushButton(QStringLiteral("A"));
+    m_filterB = new QPushButton(QStringLiteral("B"));
+    auto *slotGroup = new QButtonGroup(this);
+    slotGroup->setExclusive(true);
+    for (QPushButton *button : {m_filterA, m_filterB}) {
+        button->setCheckable(true);
+        button->setToolTip(tr("IF filter %1").arg(button->text()));
+        slotGroup->addButton(button);
+        m_radioControls << button;
+    }
+    connect(m_filterA, &QPushButton::clicked, this, [this] { m_radio.setFilterSlot(FilterSlot::A); });
+    connect(m_filterB, &QPushButton::clicked, this, [this] { m_radio.setFilterSlot(FilterSlot::B); });
+    auto *slotRow = new QHBoxLayout;
+    slotRow->addLayout(createSegment({m_filterA, m_filterB}));
+    slotRow->addStretch();
+
+    auto *filterGrid = new QGridLayout;
+    filterGrid->setContentsMargins(0, 0, 0, 0);
+    filterGrid->setHorizontalSpacing(8);
+    filterGrid->setVerticalSpacing(4);
+    for (int i = 0; i < 2; ++i) {
+        m_filterLabels[i] = new QLabel;
+        m_filterCombos[i] = new QComboBox;
+        connect(m_filterCombos[i], &QComboBox::activated, this, [this, i](int index) {
+            const FilterControl &control = i == 0 ? m_filterLayout.first : m_filterLayout.second;
+            m_radio.setFilterValue(control.command, filterRawForIndex(control, index));
+        });
+        filterGrid->addWidget(m_filterLabels[i], i, 0);
+        filterGrid->addWidget(m_filterCombos[i], i, 1);
+        m_radioControls << m_filterCombos[i];
+    }
+    filterGrid->setColumnStretch(1, 1);
+
+    m_beatCancelButton = new QPushButton(tr("BC"));
+    m_beatCancelButton->setCheckable(true);
+    m_beatCancelButton->setToolTip(tr("Beat cancel: OFF → BC1 → BC2 → OFF. BC1 removes a steady beat, "
+                                      "BC2 several or keyed ones. Not in CW or FSK."));
+    connect(m_beatCancelButton, &QPushButton::clicked, this, [this] {
+        static constexpr BeatCancel next[] = {BeatCancel::BC1, BeatCancel::BC2, BeatCancel::Off};
+        m_radio.setBeatCancel(next[int(m_radio.beatCancel())]);
+        refreshBeatCancel();   // undo the button's own toggle until the radio answers
+    });
+    m_radioControls << m_beatCancelButton;
+
+    m_autoNotchButton = new QPushButton(tr("AUTO"));
+    m_autoNotchButton->setCheckable(true);
+    m_autoNotchButton->setToolTip(tr("Auto notch: tracks and removes a carrier"));
+    connect(m_autoNotchButton, &QPushButton::clicked, this, [this](bool on) {
+        m_radio.setNotch(on ? NotchMode::Auto : NotchMode::Off, m_notchWideButton->isChecked());
+    });
+    m_manualNotchButton = new QPushButton(tr("MANUAL"));
+    m_manualNotchButton->setCheckable(true);
+    m_manualNotchButton->setToolTip(tr("Manual notch at the position set below"));
+    connect(m_manualNotchButton, &QPushButton::clicked, this, [this](bool on) {
+        m_radio.setNotch(on ? NotchMode::Manual : NotchMode::Off, m_notchWideButton->isChecked());
+    });
+    m_notchWideButton = new QPushButton(tr("WIDE"));
+    m_notchWideButton->setCheckable(true);
+    m_notchWideButton->setToolTip(tr("Manual notch bandwidth: wide or normal"));
+    connect(m_notchWideButton, &QPushButton::clicked, this,
+            [this](bool wide) { m_radio.setNotch(NotchMode::Manual, wide); });
+
+    m_notchSlider = new QSlider(Qt::Horizontal);
+    m_notchSlider->setRange(0, kNotchPositionMax);
+    m_notchSlider->setPageStep(8);
+    m_notchSlider->setToolTip(tr("Manual notch frequency (radio scale 0–127)"));
+    connect(m_notchSlider, &QSlider::valueChanged, this, [this](int position) {
+        if (!m_applyingRadioState)
+            m_radio.setNotchPosition(position);
+    });
+
+    auto *notchRow = new QHBoxLayout;
+    notchRow->setSpacing(6);
+    notchRow->addWidget(m_beatCancelButton);
+    notchRow->addLayout(createSegment({m_autoNotchButton, m_manualNotchButton}));
+    notchRow->addWidget(m_notchWideButton);
+    notchRow->addStretch();
+    const QFontMetrics metrics = fontMetrics();
+    RowGrid position(0, metrics.horizontalAdvance(QStringLiteral("127")) + 6);
+    position.addNumber(tr("Position"), m_notchSlider);
+
+    QFrame *panel = createPanel();
+    auto *layout = new QVBoxLayout(panel);
+    layout->setContentsMargins(10, 8, 10, 8);
+    layout->setSpacing(4);
+    layout->addWidget(createHeading(tr("Filter")));
+    layout->addLayout(slotRow);
+    layout->addLayout(filterGrid);
+    layout->addSpacing(4);
+    layout->addWidget(createHeading(tr("Notch")));
+    layout->addLayout(notchRow);
+    layout->addLayout(position.layout());
+    layout->addStretch();
+    return panel;
+}
+
+QWidget *MainWindow::createTransmitPanel()
+{
     m_txPowerSlider = createPowerSlider(&Radio::setTxPower);
     m_txPowerSlider->setToolTip(tr("Transmit output power (5–100 W, 5–25 W in AM)"));
-    m_tunePowerSlider = createPowerSlider(&Radio::setTunePower);
-    m_tunePowerSlider->setToolTip(tr("Output power used for TX Tune"));
-    m_carrierSlider = createLevelSlider(&Radio::setCarrierLevel, kCarrierLevelMax);
-    m_carrierSlider->setToolTip(tr("Carrier level for CW, FSK and AM"));
+    m_micGainSlider = createLevelSlider(&Radio::setMicGain, kMicGainMax);
+    m_micGainSlider->setToolTip(tr("Microphone gain for SSB and AM (FM mic gain is a menu setting)"));
 
-    auto *group = new QGroupBox(tr("Transmit"));
-    m_transmitForm = new QFormLayout(group);
-    alignForm(m_transmitForm);
-    for (auto [name, slider] : {std::pair{tr("TX power"), m_txPowerSlider}, std::pair{tr("Tune power"), m_tunePowerSlider}}) {
-        auto *value = new QLabel;
-        value->setMinimumWidth(value->fontMetrics().horizontalAdvance(QStringLiteral("100 W")) + 4);
-        value->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-        connect(slider, &QSlider::valueChanged, value, [value](int watts) { value->setText(tr("%1 W").arg(watts)); });
-        auto *row = new QHBoxLayout;
-        row->addWidget(slider, 1);
-        row->addWidget(value);
-        m_transmitForm->addRow(name, row);
-    }
-    auto *carrierValue = new QLabel(QStringLiteral("0"));
-    carrierValue->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    carrierValue->setMinimumWidth(carrierValue->fontMetrics().horizontalAdvance(QStringLiteral("100 W")) + 4);
-    connect(m_carrierSlider, &QSlider::valueChanged, carrierValue, qOverload<int>(&QLabel::setNum));
-    auto *carrierRow = new QHBoxLayout;
-    carrierRow->addWidget(m_carrierSlider, 1);
-    carrierRow->addWidget(carrierValue);
-    m_transmitForm->addRow(tr("Carrier"), carrierRow);
+    const QFontMetrics metrics = fontMetrics();
+    RowGrid rows(metrics.horizontalAdvance(tr("PROC OUT")) + 22, metrics.horizontalAdvance(QStringLiteral("100 W")) + 6);
 
-    m_voxGainSlider = createLevelSlider(&Radio::setVoxGain, kVoxGainMax);
-    m_voxGainSlider->setToolTip(tr("VOX gain: how loud you must speak to key up"));
-    auto *voxGainValue = new QLabel(QStringLiteral("0"));
-    voxGainValue->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    voxGainValue->setMinimumWidth(carrierValue->minimumWidth());
-    connect(m_voxGainSlider, &QSlider::valueChanged, voxGainValue, qOverload<int>(&QLabel::setNum));
-    auto *voxGainRow = new QHBoxLayout;
-    voxGainRow->addWidget(m_voxGainSlider, 1);
-    voxGainRow->addWidget(voxGainValue);
-    m_transmitForm->addRow(tr("VOX level"), voxGainRow);
-
-    m_voxDelaySlider = new QSlider(Qt::Horizontal);
-    m_voxDelaySlider->setRange(0, kVoxDelayMaxMs / kVoxDelayStepMs);
-    m_voxDelaySlider->setToolTip(tr("VOX delay: how long the radio stays in transmit after you stop speaking"));
-    connect(m_voxDelaySlider, &QSlider::valueChanged, this, [this](int steps) {
-        if (!m_applyingRadioState)
-            m_radio.setVoxDelay(steps * kVoxDelayStepMs);
-    });
-    m_radioControls << m_voxDelaySlider;
-    auto *voxDelayValue = new QLabel(tr("%1 ms").arg(0));
-    voxDelayValue->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    voxDelayValue->setMinimumWidth(voxDelayValue->fontMetrics().horizontalAdvance(tr("%1 ms").arg(3000)) + 4);
-    connect(m_voxDelaySlider, &QSlider::valueChanged, voxDelayValue,
-            [voxDelayValue](int steps) { voxDelayValue->setText(tr("%1 ms").arg(steps * kVoxDelayStepMs)); });
-    auto *voxDelayRow = new QHBoxLayout;
-    voxDelayRow->addWidget(m_voxDelaySlider, 1);
-    voxDelayRow->addWidget(voxDelayValue);
-    m_transmitForm->addRow(tr("VOX delay"), voxDelayRow);
+    auto *powerValue = new QLabel;
+    connect(m_txPowerSlider, &QSlider::valueChanged, powerValue,
+            [powerValue](int watts) { powerValue->setText(tr("%1 W").arg(watts)); });
+    rows.add(new QLabel(tr("Power")), m_txPowerSlider, powerValue);
+    rows.addNumber(tr("Mic"), m_micGainSlider);
 
     m_processorButton = new QPushButton(tr("PROC"));
     m_processorButton->setCheckable(true);
     m_processorButton->setToolTip(tr("Speech processor: click to turn on, again for the IN level, "
                                      "again for the OUT level, again for off"));
-    m_processorButton->setMinimumWidth(m_processorButton->fontMetrics().horizontalAdvance(tr("PROC OUT")) + 24);
     connect(m_processorButton, &QPushButton::clicked, this, [this] {
         // Only the first and last clicks reach the radio; IN and OUT just
         // choose which level the slider edits.
@@ -1202,8 +1381,6 @@ QWidget *MainWindow::createTransmitGroup()
     m_processorSlider->setRange(0, kProcessorLevelMax);
     m_processorSlider->setPageStep(10);
     m_processorValue = new QLabel;
-    m_processorValue->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    m_processorValue->setMinimumWidth(carrierValue->minimumWidth());
     connect(m_processorSlider, &QSlider::valueChanged, this, [this](int level) {
         m_processorValue->setNum(level);
         if (m_applyingRadioState || !m_radio.processor() || m_processorTarget == ProcessorTarget::None)
@@ -1215,39 +1392,60 @@ QWidget *MainWindow::createTransmitGroup()
         else
             m_radio.setProcessorLevels(input, level);
     });
-    auto *processorRow = new QHBoxLayout;
-    processorRow->addWidget(m_processorSlider, 1);
-    processorRow->addWidget(m_processorValue);
-    m_transmitForm->addRow(m_processorButton, processorRow);
+    rows.add(m_processorButton, m_processorSlider, m_processorValue);
     m_radioControls << m_processorButton;
 
     m_voxButton = new QPushButton(tr("VOX"));
     m_voxButton->setCheckable(true);
     m_voxButton->setToolTip(tr("Voice-operated transmit (break-in in CW)"));
     connect(m_voxButton, &QPushButton::clicked, &m_radio, &Radio::setVox);
+    m_voxGainSlider = createLevelSlider(&Radio::setVoxGain, kVoxGainMax);
+    m_voxGainSlider->setToolTip(tr("VOX gain: how loud you must speak to key up"));
+    auto *voxValue = new QLabel(QStringLiteral("0"));
+    connect(m_voxGainSlider, &QSlider::valueChanged, voxValue, qOverload<int>(&QLabel::setNum));
+    rows.add(m_voxButton, m_voxGainSlider, voxValue);
+
+    // TX monitor: ML has no on/off of its own (0 is off), so the button
+    // sends 0 or the slider's level.
+    m_monitorButton = new QPushButton(tr("MON"));
+    m_monitorButton->setCheckable(true);
+    m_monitorButton->setToolTip(tr("TX monitor: hear your own transmit audio"));
+    m_monitorSlider = new QSlider(Qt::Horizontal);
+    m_monitorSlider->setPageStep(1);
+    m_monitorSlider->setRange(1, txMonitorMax(kModelTs590SG));
+    m_monitorSlider->setValue(5);
+    m_monitorSlider->setToolTip(tr("TX monitor level"));
+    auto *monitorValue = new QLabel;
+    connect(m_monitorSlider, &QSlider::valueChanged, monitorValue, qOverload<int>(&QLabel::setNum));
+    monitorValue->setNum(m_monitorSlider->value());
+    connect(m_monitorSlider, &QSlider::valueChanged, this, [this](int level) {
+        if (!m_applyingRadioState && m_radio.txMonitor().value_or(0) > 0)
+            m_radio.setTxMonitor(level);
+    });
+    connect(m_monitorButton, &QPushButton::clicked, this, [this](bool on) {
+        m_radio.setTxMonitor(on ? m_monitorSlider->value() : 0);
+        // Radio caches the new level right away, so the echo won't signal a
+        // change; update the row now.
+        refreshMonitor();
+    });
+    rows.add(m_monitorButton, m_monitorSlider, monitorValue);
 
     // SEND latches: red while transmitting until clicked again.
     m_sendButton = new QPushButton(tr("SEND"));
     m_sendButton->setObjectName(QStringLiteral("sendButton"));
     m_sendButton->setCheckable(true);
     m_sendButton->setToolTip(tr("Transmit until clicked again"));
-    m_sendButton->setStyleSheet(QStringLiteral(
-        "#sendButton { padding: 4px 12px; border: 1px solid palette(mid); border-radius: 4px;"
-        "  background: palette(button); }"
-        "#sendButton:checked { background: #e74c3c; color: white; font-weight: bold; border-color: #c0392b; }"
-        "#sendButton:disabled { color: palette(mid); }"));
     connect(m_sendButton, &QPushButton::clicked, this, [this](bool on) {
         m_tuneCarrierButton->setChecked(false);   // one kind of transmit at a time
         m_radio.setTransmit(on);
     });
 
-    // TUN latches like SEND, but keys TX Tune: a carrier at Tune power.
-    m_tuneCarrierButton = new QPushButton(tr("TUN"));
+    // TX TUNE latches like SEND, but keys a carrier at Tune power.
+    m_tuneCarrierButton = new QPushButton(tr("TX TUNE"));
     m_tuneCarrierButton->setObjectName(QStringLiteral("tuneCarrierButton"));
     m_tuneCarrierButton->setCheckable(true);
-    m_tuneCarrierButton->setToolTip(tr("Transmit a tune carrier at the Tune power level until clicked again"));
-    m_tuneCarrierButton->setStyleSheet(m_sendButton->styleSheet().replace(QLatin1String("#sendButton"),
-                                                                          QLatin1String("#tuneCarrierButton")));
+    m_tuneCarrierButton->setToolTip(tr("Transmit a tune carrier at the Tune power level (Setup tab) until "
+                                       "clicked again"));
     connect(m_tuneCarrierButton, &QPushButton::clicked, this, [this](bool on) {
         m_sendButton->setChecked(false);
         m_radio.setTuneCarrier(on);
@@ -1257,11 +1455,6 @@ QWidget *MainWindow::createTransmitGroup()
     m_txButton = new QPushButton(tr("TX"));
     m_txButton->setObjectName(QStringLiteral("txButton"));
     m_txButton->setToolTip(tr("Hold to transmit"));
-    m_txButton->setStyleSheet(QStringLiteral(
-        "#txButton { padding: 8px; border: none; border-radius: 4px; font-weight: bold; color: white;"
-        "  background: #2ecc71; }"
-        "#txButton:pressed { background: #e74c3c; }"
-        "#txButton:disabled { background: palette(midlight); color: palette(mid); }"));
     connect(m_txButton, &QPushButton::pressed, this, [this] { m_radio.setTransmit(true); });
     connect(m_txButton, &QPushButton::released, this, [this] { m_radio.setTransmit(false); });
     // A held button can miss its release if the app loses focus mid-press.
@@ -1277,68 +1470,183 @@ QWidget *MainWindow::createTransmitGroup()
     });
     m_radioControls << m_voxButton << m_sendButton << m_tuneCarrierButton << m_txButton;
 
-    auto *keying = new QGridLayout;
-    keying->addWidget(m_voxButton, 0, 0);
-    keying->addWidget(m_sendButton, 0, 1);
-    keying->addWidget(m_tuneCarrierButton, 0, 2);
-    keying->addWidget(m_txButton, 1, 0, 1, 3);
-    m_transmitForm->addRow(keying);
-    return group;
+    auto *keying = new QHBoxLayout;
+    keying->setSpacing(6);
+    keying->addWidget(m_sendButton);
+    keying->addWidget(m_tuneCarrierButton);
+    keying->addWidget(m_txButton, 1);
+
+    QFrame *panel = createPanel();
+    auto *layout = new QVBoxLayout(panel);
+    layout->setContentsMargins(10, 8, 10, 8);
+    layout->setSpacing(4);
+    layout->addWidget(createHeading(tr("Transmit")));
+    layout->addLayout(rows.layout());
+    layout->addStretch();
+    layout->addSpacing(2);
+    layout->addLayout(keying);
+    return panel;
 }
 
-QWidget *MainWindow::createBandsPage()
+// Things set once: the connection, the TCI server, the USB audio levels, the
+// transmit set-up levels and the transmit audio filter.
+QWidget *MainWindow::createSetupPage()
 {
-    m_bandButtons = new QButtonGroup(this);
-    m_bandButtons->setExclusive(true);
+    const QFontMetrics metrics = fontMetrics();
+    auto section = [](const QString &title, QLayout *content) {
+        auto *widget = new QWidget;
+        auto *layout = new QVBoxLayout(widget);
+        layout->setContentsMargins(0, 0, 0, 0);
+        layout->setSpacing(4);
+        layout->addWidget(createHeading(title));
+        layout->addLayout(content);
+        return widget;
+    };
+    auto column = [](std::initializer_list<QWidget *> sections) {
+        auto *widget = new QWidget;
+        auto *layout = new QVBoxLayout(widget);
+        layout->setContentsMargins(0, 0, 0, 0);
+        layout->setSpacing(10);
+        for (QWidget *item : sections)
+            layout->addWidget(item);
+        layout->addStretch();
+        return widget;
+    };
 
-    auto *grid = new QGridLayout;
-    grid->setSpacing(8);
-    constexpr int kColumns = 6;
-    for (int band = 0; band < kBandCount; ++band) {
-        const QString wavelength = bandWavelength(band);
-        auto *button = new QPushButton(wavelength.isEmpty() ? bandLabel(band)
-                                                            : QStringLiteral("%1\n%2").arg(bandLabel(band), wavelength));
-        button->setCheckable(true);
-        button->setMinimumSize(96, 64);
-        button->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-        QFont font = button->font();
-        font.setPointSizeF(font.pointSizeF() * 1.25);
-        font.setBold(true);
-        button->setFont(font);
-        button->setToolTip(band == kGeneralBand ? tr("General coverage")
-                                                : tr("%1 MHz band (%2)").arg(bandLabel(band), wavelength));
-        m_bandButtons->addButton(button, band);
-        grid->addWidget(button, band / kColumns, band % kColumns);
-        m_radioControls << button;
-    }
-    connect(m_bandButtons, &QButtonGroup::idClicked, this, [this](int band) {
-        m_radio.selectBand(band);
-        refreshBand();   // the highlight follows the radio's frequency, not the click
+    // ---- radio connection
+    m_portCombo = new QComboBox;
+    m_portCombo->setMinimumContentsLength(20);
+    m_portCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    auto *refresh = new QPushButton(QStringLiteral("⟳"));
+    refresh->setToolTip(tr("Look for serial ports again"));
+    connect(refresh, &QPushButton::clicked, this, &MainWindow::refreshPorts);
+    m_baudCombo = new QComboBox;
+    for (qint32 baud : kBaudRates)
+        m_baudCombo->addItem(tr("%1 bps").arg(baud), baud);
+    m_baudCombo->setToolTip(tr("Must match radio menu 068 (USB port speed)"));
+    const qint32 savedBaud = QSettings().value(QStringLiteral("serial/baud"), 115200).toInt();
+    m_baudCombo->setCurrentIndex(std::max(0, m_baudCombo->findData(savedBaud)));
+    m_connectButton = new QPushButton(tr("Connect"));
+    connect(m_connectButton, &QPushButton::clicked, this, &MainWindow::toggleConnection);
+
+    auto *connection = new QGridLayout;
+    connection->setHorizontalSpacing(8);
+    connection->setVerticalSpacing(4);
+    connection->addWidget(new QLabel(tr("Port")), 0, 0);
+    connection->addWidget(m_portCombo, 0, 1);
+    connection->addWidget(refresh, 0, 2);
+    connection->addWidget(new QLabel(tr("Speed")), 1, 0);
+    auto *speedRow = new QHBoxLayout;
+    speedRow->addWidget(m_baudCombo);
+    speedRow->addStretch();
+    speedRow->addWidget(m_connectButton);
+    connection->addLayout(speedRow, 1, 1, 1, 2);
+    connection->setColumnStretch(1, 1);
+
+    // ---- TCI
+    m_tciSetupLabel = new QLabel;
+    m_tciSetupLabel->setProperty("dim", true);
+    m_tciSetupLabel->setWordWrap(true);
+    auto *tciButton = new QPushButton(tr("Settings…"));
+    tciButton->setToolTip(tr("Let programs such as WSJT-X, fldigi and TCIdigi share the radio"));
+    connect(tciButton, &QPushButton::clicked, this, &MainWindow::editTciServer);
+    auto *tciRow = new QHBoxLayout;
+    tciRow->addWidget(m_tciSetupLabel, 1);
+    tciRow->addWidget(tciButton);
+
+    // ---- computer audio
+    const int valueWidth = metrics.horizontalAdvance(tr("%1 ms").arg(3000)) + 6;
+    const int nameWidth = metrics.horizontalAdvance(tr("Tune power")) + 6;
+    m_usbInSlider = createLevelSlider(&Radio::setUsbAudioIn, kUsbAudioLevelMax);
+    m_usbInSlider->setToolTip(tr("USB audio input level (menu 071): audio from the computer to the transmitter"));
+    m_usbOutSlider = createLevelSlider(&Radio::setUsbAudioOut, kUsbAudioLevelMax);
+    m_usbOutSlider->setToolTip(tr("USB audio output level (menu 072): received audio to the computer"));
+    RowGrid audio(nameWidth, valueWidth);
+    audio.addNumber(tr("USB in"), m_usbInSlider);
+    audio.addNumber(tr("USB out"), m_usbOutSlider);
+
+    // ---- transmit set-up
+    m_tunePowerSlider = createPowerSlider(&Radio::setTunePower);
+    m_tunePowerSlider->setToolTip(tr("Output power used for TX TUNE"));
+    m_carrierSlider = createLevelSlider(&Radio::setCarrierLevel, kCarrierLevelMax);
+    m_carrierSlider->setToolTip(tr("Carrier level for CW, FSK and AM"));
+    m_voxDelaySlider = new QSlider(Qt::Horizontal);
+    m_voxDelaySlider->setRange(0, kVoxDelayMaxMs / kVoxDelayStepMs);
+    m_voxDelaySlider->setToolTip(tr("VOX delay: how long the radio stays in transmit after you stop speaking"));
+    connect(m_voxDelaySlider, &QSlider::valueChanged, this, [this](int steps) {
+        if (!m_applyingRadioState)
+            m_radio.setVoxDelay(steps * kVoxDelayStepMs);
     });
+    m_radioControls << m_voxDelaySlider;
+    RowGrid transmit(nameWidth, valueWidth);
+    auto *tuneName = new QLabel(tr("Tune power"));
+    auto *tuneValue = new QLabel;
+    connect(m_tunePowerSlider, &QSlider::valueChanged, tuneValue,
+            [tuneValue](int watts) { tuneValue->setText(tr("%1 W").arg(watts)); });
+    transmit.add(tuneName, m_tunePowerSlider, tuneValue);
+    m_tunePowerWidgets = {tuneName, m_tunePowerSlider, tuneValue};   // the TS-590S has no tune power
+    transmit.addNumber(tr("Carrier"), m_carrierSlider);
+    auto *voxDelayValue = new QLabel(tr("%1 ms").arg(0));
+    connect(m_voxDelaySlider, &QSlider::valueChanged, voxDelayValue,
+            [voxDelayValue](int steps) { voxDelayValue->setText(tr("%1 ms").arg(steps * kVoxDelayStepMs)); });
+    transmit.add(new QLabel(tr("VOX delay")), m_voxDelaySlider, voxDelayValue);
 
-    auto *hint = new QLabel(tr("Click the current band again to step through its band memories."));
-    hint->setForegroundRole(QPalette::PlaceholderText);
+    // ---- transmit audio filter (menus 031–034)
+    auto *txFilter = new QGridLayout;
+    txFilter->setHorizontalSpacing(8);
+    txFilter->setVerticalSpacing(4);
+    txFilter->addWidget(new QLabel(tr("SSB / AM")), 0, 0);
+    txFilter->addWidget(new QLabel(tr("SSB data")), 1, 0);
+    for (int i = 0; i < kTxFilterCount; ++i) {
+        const auto filter = TxFilter(i);
+        auto *combo = new QComboBox;
+        for (int hz : txFilterValuesHz(filter))
+            combo->addItem(tr("%1 Hz").arg(hz));
+        combo->setCurrentIndex(-1);
+        combo->setToolTip(i % 2 == 0 ? tr("Low cut") : tr("High cut"));
+        connect(combo, &QComboBox::activated, this, [this, filter](int index) { m_radio.setTxFilter(filter, index); });
+        // TxFilter order: low/high for SSB, then low/high for SSB-DATA.
+        txFilter->addWidget(combo, i / 2, 1 + 2 * (i % 2));
+        m_txFilterCombos[i] = combo;
+        m_radioControls << combo;
+    }
+    for (int row = 0; row < 2; ++row) {
+        auto *to = new QLabel(tr("to"));
+        to->setProperty("dim", true);
+        txFilter->addWidget(to, row, 2);
+    }
+    txFilter->setColumnStretch(1, 1);
+    txFilter->setColumnStretch(3, 1);
 
+    // Three columns side by side, or stacked when the tabs are beside the
+    // operating controls.
     auto *page = new QWidget;
-    auto *layout = new QVBoxLayout(page);
-    layout->addLayout(grid);
-    layout->addWidget(hint);
-    layout->addStretch();
-    return page;
+    m_setupColumns = new QBoxLayout(QBoxLayout::LeftToRight, page);
+    m_setupColumns->setContentsMargins(0, 4, 16, 0);   // clear of the scroll bar
+    m_setupColumns->setSpacing(18);
+    m_setupColumns->addWidget(column({section(tr("Radio connection"), connection),
+                                      section(tr("Programs sharing the radio (TCI)"), tciRow)}), 1);
+    m_setupColumns->addWidget(column({section(tr("Computer audio"), audio.layout()),
+                                      section(tr("Transmit set-up"), transmit.layout())}), 1);
+    m_setupColumns->addWidget(column({section(tr("Transmit audio filter"), txFilter)}), 1);
+
+    auto *scroll = new QScrollArea;
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setWidgetResizable(true);
+    scroll->setWidget(page);
+    // Let the panel behind show through.
+    scroll->viewport()->setAutoFillBackground(false);
+    page->setAutoFillBackground(false);
+
+    refreshPorts();
+    return scroll;
 }
 
 QWidget *MainWindow::createCwPage()
 {
-    // Each slider gets a readout at its right, all the same width.
-    const int valueWidth = fontMetrics().horizontalAdvance(QStringLiteral("1000 ms")) + 6;
-    auto sliderRow = [valueWidth](QSlider *slider, QLabel *value) {
-        value->setFixedWidth(valueWidth);
-        value->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-        auto *row = new QHBoxLayout;
-        row->addWidget(slider, 1);
-        row->addWidget(value);
-        return row;
-    };
+    const QFontMetrics metrics = fontMetrics();
+    RowGrid keyerRows(metrics.horizontalAdvance(tr("BREAK-IN")) + 22,
+                      metrics.horizontalAdvance(QStringLiteral("1000 ms")) + 6);
 
     m_keyerSpeedSlider = createLevelSlider(&Radio::setKeyerSpeed, kKeyerSpeedMax);
     m_keyerSpeedSlider->setMinimum(kKeyerSpeedMin);
@@ -1347,12 +1655,14 @@ QWidget *MainWindow::createCwPage()
     auto *speedValue = new QLabel;
     connect(m_keyerSpeedSlider, &QSlider::valueChanged, speedValue,
             [speedValue](int wpm) { speedValue->setText(tr("%1 WPM").arg(wpm)); });
+    keyerRows.add(new QLabel(tr("Speed")), m_keyerSpeedSlider, speedValue);
 
     m_pitchSlider = createLevelSlider(&Radio::setCwPitch, kCwPitchIndexMax);
     m_pitchSlider->setToolTip(tr("CW pitch and sidetone frequency (a menu setting)"));
     auto *pitchValue = new QLabel;
     connect(m_pitchSlider, &QSlider::valueChanged, pitchValue,
             [pitchValue](int index) { pitchValue->setText(tr("%1 Hz").arg(cwPitchHz(index))); });
+    keyerRows.add(new QLabel(tr("Pitch")), m_pitchSlider, pitchValue);
 
     m_breakInButton = new QPushButton(tr("BREAK-IN"));
     m_breakInButton->setCheckable(true);
@@ -1373,6 +1683,7 @@ QWidget *MainWindow::createCwPage()
     connect(m_breakInDelaySlider, &QSlider::valueChanged, delayValue, [delayValue](int steps) {
         delayValue->setText(steps == 0 ? tr("FULL") : tr("%1 ms").arg(steps * kBreakInDelayStep));
     });
+    keyerRows.add(m_breakInButton, m_breakInDelaySlider, delayValue);
 
     m_cwTuneButton = new QPushButton(tr("CW TUNE"));
     m_cwTuneButton->setCheckable(true);
@@ -1381,26 +1692,28 @@ QWidget *MainWindow::createCwPage()
         m_radio.setCwTune(on);
         refreshKeyer();   // lit only once the radio reports it's tuning
     });
-
-    auto *keyer = new QGroupBox(tr("Keyer"));
-    auto *keyerForm = new QFormLayout(keyer);
-    alignForm(keyerForm);
-    keyerForm->addRow(tr("Speed"), sliderRow(m_keyerSpeedSlider, speedValue));
-    keyerForm->addRow(tr("Pitch"), sliderRow(m_pitchSlider, pitchValue));
-    keyerForm->addRow(m_breakInButton, sliderRow(m_breakInDelaySlider, delayValue));
     auto *tuneRow = new QHBoxLayout;
     tuneRow->addWidget(m_cwTuneButton);
     tuneRow->addStretch();
-    keyerForm->addRow(tuneRow);
+
+    auto *keyer = new QWidget;
+    auto *keyerLayout = new QVBoxLayout(keyer);
+    keyerLayout->setContentsMargins(0, 0, 0, 0);
+    keyerLayout->setSpacing(4);
+    keyerLayout->addWidget(createHeading(tr("Keyer")));
+    keyerLayout->addLayout(keyerRows.layout());
+    keyerLayout->addLayout(tuneRow);
+    keyerLayout->addStretch();
+    m_cwKeyer = keyer;
 
     // Keyboard CW: Enter (or SEND) queues the line; the radio keys it at the
     // keyer speed, transmitting if break-in is on.
     m_cwEdit = new QLineEdit;
-    // Same face and size as the decoded text below.
+    // Same face and size as the decoded text above it.
     QFont cwFont = QFontDatabase::systemFont(QFontDatabase::FixedFont);
     cwFont.setPointSize(kCwTextPointSize);
     m_cwEdit->setFont(cwFont);
-    m_cwEdit->setTextMargins(4, 3, 4, 3);
+    m_cwEdit->setTextMargins(4, 2, 4, 2);
     m_cwEdit->setPlaceholderText(tr("Type text and press Enter to send it"));
     m_cwEdit->setToolTip(tr("Letters, digits and . , / ? = : ' \" ( ) * + - @. "
                             "Prosigns: [ BT, ] KN, < AS, > SK, _ AR, \\ BK, # HH, % SN."));
@@ -1419,15 +1732,12 @@ QWidget *MainWindow::createCwPage()
     m_cwStopButton->setToolTip(tr("Stop sending and drop any text not yet keyed"));
     connect(m_cwStopButton, &QPushButton::clicked, &m_radio, &Radio::stopCw);
     m_cwQueueLabel = new QLabel;
-    m_cwQueueLabel->setForegroundRole(QPalette::PlaceholderText);
-
-    auto *sendGroup = new QGroupBox(tr("Keyboard CW"));
-    auto *sendLayout = new QGridLayout(sendGroup);
-    sendLayout->addWidget(m_cwEdit, 0, 0, 1, 3);
-    sendLayout->addWidget(m_cwQueueLabel, 1, 0);
-    sendLayout->addWidget(m_cwSendButton, 1, 1);
-    sendLayout->addWidget(m_cwStopButton, 1, 2);
-    sendLayout->setColumnStretch(0, 1);
+    m_cwQueueLabel->setProperty("dim", true);
+    auto *entryRow = new QHBoxLayout;
+    entryRow->setSpacing(6);
+    entryRow->addWidget(m_cwEdit, 1);
+    entryRow->addWidget(m_cwSendButton);
+    entryRow->addWidget(m_cwStopButton);
 
     // Morse decoder (TS-590SG): the radio streams what it decodes.
     m_decoderButton = new QPushButton(tr("DECODE"));
@@ -1441,8 +1751,11 @@ QWidget *MainWindow::createCwPage()
     m_decoderSlider = createLevelSlider(&Radio::setDecoderThreshold, kDecoderThresholdMax);
     m_decoderSlider->setMinimum(kDecoderThresholdMin);
     m_decoderSlider->setPageStep(3);
+    m_decoderSlider->setMaximumWidth(140);
     m_decoderSlider->setToolTip(tr("Decoder threshold: raise it if noise decodes as characters"));
     auto *thresholdValue = new QLabel;
+    thresholdValue->setFixedWidth(metrics.horizontalAdvance(QStringLiteral("00")) + 6);
+    thresholdValue->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     connect(m_decoderSlider, &QSlider::valueChanged, thresholdValue, qOverload<int>(&QLabel::setNum));
     m_decoderText = new QPlainTextEdit;
     m_decoderText->setReadOnly(true);
@@ -1453,26 +1766,39 @@ QWidget *MainWindow::createCwPage()
     m_decoderText->setPlaceholderText(tr("Decoded text appears here"));
     auto *clearButton = new QPushButton(tr("Clear"));
     connect(clearButton, &QPushButton::clicked, m_decoderText, &QPlainTextEdit::clear);
+    auto *thresholdLabel = new QLabel(tr("Threshold"));
+    thresholdLabel->setProperty("dim", true);
 
-    m_decoderGroup = new QGroupBox(tr("Morse Decoder"));
+    m_decoderGroup = new QWidget;
     auto *decoderLayout = new QVBoxLayout(m_decoderGroup);
+    decoderLayout->setContentsMargins(0, 0, 0, 0);
+    decoderLayout->setSpacing(4);
     auto *decoderRow = new QHBoxLayout;
+    decoderRow->setSpacing(6);
+    decoderRow->addWidget(createHeading(tr("Decoder")), 1);
     decoderRow->addWidget(m_decoderButton);
-    decoderRow->addWidget(new QLabel(tr("Threshold")));
-    decoderRow->addLayout(sliderRow(m_decoderSlider, thresholdValue), 1);
+    decoderRow->addWidget(thresholdLabel);
+    decoderRow->addWidget(m_decoderSlider, 1);
+    decoderRow->addWidget(thresholdValue);
     decoderRow->addWidget(clearButton);
     decoderLayout->addLayout(decoderRow);
     decoderLayout->addWidget(m_decoderText, 1);
 
-    auto *left = new QVBoxLayout;
-    left->addWidget(keyer);
-    left->addWidget(sendGroup);
-    left->addStretch();
+    auto *right = new QVBoxLayout;
+    right->setSpacing(6);
+    right->addWidget(m_decoderGroup, 1);
+    right->addLayout(entryRow);
+    right->addWidget(m_cwQueueLabel);
+    right->addStretch(0);   // takes the space when the TS-590S hides the decoder
 
+    // The keyer beside the decoder, or above it when the tabs are beside the
+    // operating controls.
     auto *page = new QWidget;
-    auto *layout = new QHBoxLayout(page);
-    layout->addLayout(left, 1);
-    layout->addWidget(m_decoderGroup, 1);
+    m_cwColumns = new QBoxLayout(QBoxLayout::LeftToRight, page);
+    m_cwColumns->setContentsMargins(0, 4, 0, 0);
+    m_cwColumns->setSpacing(14);
+    m_cwColumns->addWidget(keyer, 2);
+    m_cwColumns->addLayout(right, 5);
     return page;
 }
 
@@ -1512,7 +1838,6 @@ QWidget *MainWindow::createQrzPage()
     auto *lookupRow = new QHBoxLayout;
     lookupRow->addWidget(m_qrzCall);
     lookupRow->addWidget(m_qrzLookupButton);
-    lookupRow->addWidget(m_qrzLogButton);
     lookupRow->addStretch();
     lookupRow->addWidget(accountButton);
 
@@ -1530,6 +1855,7 @@ QWidget *MainWindow::createQrzPage()
     }
     m_qrzComment = new QLineEdit;
     m_qrzComment->setPlaceholderText(tr("Comment (optional)"));
+    // Two short rows, so the page also fits beside the operating controls.
     auto *qsoRow = new QHBoxLayout;
     qsoRow->addWidget(new QLabel(tr("Mode")));
     qsoRow->addWidget(m_qrzMode);
@@ -1538,8 +1864,10 @@ QWidget *MainWindow::createQrzPage()
     qsoRow->addWidget(m_qrzRstSent);
     qsoRow->addWidget(new QLabel(tr("rcvd")));
     qsoRow->addWidget(m_qrzRstRcvd);
-    qsoRow->addSpacing(8);
-    qsoRow->addWidget(m_qrzComment, 1);
+    qsoRow->addStretch();
+    auto *logRow = new QHBoxLayout;
+    logRow->addWidget(m_qrzComment, 1);
+    logRow->addWidget(m_qrzLogButton);
 
     m_qrzStatus = new QLabel;
     m_qrzStatus->setWordWrap(true);
@@ -1579,10 +1907,12 @@ QWidget *MainWindow::createQrzPage()
 
     auto *page = new QWidget;
     auto *layout = new QVBoxLayout(page);
+    layout->setContentsMargins(0, 4, 0, 0);
     layout->addLayout(lookupRow);
-    layout->addLayout(qsoRow);
     layout->addWidget(m_qrzStatus);
     layout->addLayout(results, 1);
+    layout->addLayout(qsoRow);
+    layout->addLayout(logRow);
     return page;
 }
 
@@ -1690,7 +2020,7 @@ void MainWindow::onStateChanged(Radio::State state)
     switch (state) {
     case Radio::State::Disconnected:
     case Radio::State::PoweredOff:
-        m_radioInfo->setText(state == Radio::State::PoweredOff ? tr("Radio is switched off") : tr("Disconnected"));
+        setRadioInfo(state == Radio::State::PoweredOff ? tr("Radio is switched off") : tr("Not connected"), false);
         for (SMeter *meter : std::as_const(m_meters))
             meter->reset();
         m_txIndicator->setEnabled(false);
@@ -1710,7 +2040,7 @@ void MainWindow::onStateChanged(Radio::State state)
         refreshKeyer();
         refreshDecoder();
         break;
-    case Radio::State::Connecting: m_radioInfo->setText(tr("Connecting…")); break;
+    case Radio::State::Connecting: setRadioInfo(tr("Connecting…"), false); break;
     case Radio::State::Connected:
         // The slider may already hold this value, so it won't signal a change.
         for (SMeter *meter : std::as_const(m_meters))
@@ -1748,15 +2078,9 @@ void MainWindow::onModeChanged(Mode mode, bool data)
             m_txPowerSlider->setValue(*watts);
         m_applyingRadioState = false;
     }
-    if (QAbstractButton *button = m_modeButtons->button(int(mode))) {
-        button->setChecked(true);
-    } else if (QAbstractButton *checked = m_modeButtons->checkedButton()) {
-        m_modeButtons->setExclusive(false);
-        checked->setChecked(false);
-        m_modeButtons->setExclusive(true);
-    }
-    m_dataCheck->setChecked(data);
-    m_dataCheck->setEnabled(m_radio.state() == Radio::State::Connected && modeSupportsData(mode));
+    checkOnly(m_modeButtons, m_modeButtons->button(int(mode)));
+    m_dataButton->setChecked(data);
+    m_dataButton->setEnabled(m_radio.state() == Radio::State::Connected && modeSupportsData(mode));
     m_rxEq->setEqMode(m_radio.eqMode());
     m_txEq->setEqMode(m_radio.eqMode());
     refreshNotch();
@@ -1861,11 +2185,11 @@ void MainWindow::refreshNotch()
     m_manualNotchButton->setEnabled(available);
     // Bandwidth and position only apply to the manual notch.
     const bool manual = available && mode == NotchMode::Manual;
-    m_notchWideCheck->setEnabled(manual);
+    m_notchWideButton->setEnabled(manual);
     // Outside manual the radio always reports "normal"; keep the user's last
     // choice so re-enabling manual restores it.
     if (manual)
-        m_notchWideCheck->setChecked(m_radio.notchWide());
+        m_notchWideButton->setChecked(m_radio.notchWide());
     m_notchSlider->setEnabled(manual);
 }
 
@@ -1916,7 +2240,7 @@ void MainWindow::refreshMonitor()
 void MainWindow::refreshAntenna()
 {
     const bool connected = m_radio.state() == Radio::State::Connected;
-    m_antennaButton->setText(connected && m_radio.antenna() == 2 ? QStringLiteral("ANT2") : QStringLiteral("ANT1"));
+    checkOnly(m_antennaButtons, connected ? m_antennaButtons->button(m_radio.antenna()) : nullptr);
     m_rxAntennaButton->setChecked(connected && m_radio.rxAntenna());
     m_driveOutButton->setChecked(connected && m_radio.driveOut());
     m_tunerButton->setChecked(connected && m_radio.tuner());
@@ -2110,12 +2434,19 @@ QString MainWindow::tciAddress(const QSettings &settings)
 
 void MainWindow::refreshTciStatus()
 {
-    m_tciStatus->setVisible(m_tci.isListening());
+    const bool listening = m_tci.isListening();
     const int clients = m_tci.clientCount();
-    m_tciStatus->setText(tr("TCI %1:%2 · %3")
-                             .arg(m_tci.address().toString())
-                             .arg(m_tci.port())
-                             .arg(clients == 1 ? tr("1 client") : tr("%1 clients").arg(clients)));
+    const QString programs = clients == 1 ? tr("1 program") : tr("%1 programs").arg(clients);
+    m_tciChip->setVisible(listening);
+    m_tciChip->setText(chipText(tr("TCI · %1").arg(programs), clients > 0));
+    m_tciChip->setToolTip(tr("Programs sharing the radio over TCI, at %1 port %2. Click for the settings.")
+                              .arg(m_tci.address().toString())
+                              .arg(m_tci.port()));
+    m_tciSetupLabel->setText(listening ? tr("On · %1 port %2 · %3 connected")
+                                             .arg(m_tci.address().toString())
+                                             .arg(m_tci.port())
+                                             .arg(programs)
+                                       : tr("Off"));
 }
 
 void MainWindow::editTciServer()
@@ -2495,5 +2826,7 @@ void MainWindow::onUpdateChecked(bool ok, const QString &version, const QString 
 
 void MainWindow::showMessage(const QString &text)
 {
-    statusBar()->showMessage(text, kMessageTimeoutMs);
+    m_message->setText(text);
+    m_message->setToolTip(text);
+    m_messageTimer.start();
 }

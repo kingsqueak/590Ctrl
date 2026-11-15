@@ -11,14 +11,25 @@ Version 0.15.1 · Licensed under the [GPL-3.0](LICENSE).
 
 ## Features
 
+**The window**
+- Everything used while operating is always in view: the VFOs and meter, the
+  band and mode buttons, and Receive, Filter and Transmit panels
+- The **CW**, **QRZ**, **Equalizer**, **Menu** and **Setup** tabs sit below
+  those controls, or beside them in a wider, shorter window: the **View**
+  button at the top right (or **View → Tabs Below / Tabs Beside**) switches
+- **Tabs** at the top right hides the tabs, leaving a compact operating window
+- **Setup** holds what is set once: the port and speed, the TCI server, the
+  USB audio levels, tune power, carrier level, VOX delay and the transmit
+  audio filter
+
 **Tuning and modes**
 - VFO A and B displays: scroll over any digit to tune it (one step per wheel
   click), or double-click to type a frequency
 - RX/TX VFO selection, split, A=B
 - Mode buttons (LSB, USB, CW, CW-R, FSK, FSK-R, FM, AM) and DATA
-- RIT / XIT with a signed offset and CLEAR
-- **Bands** tab: 1.8–50 MHz and GENE; click the current band again to step
-  through its band memories
+- RIT / XIT with a signed offset and CLR, beside the VFOs
+- Band buttons, 160 m to 6 m and GEN (general coverage); click the current
+  band again to step through its band memories
 
 **Receive**
 - AF gain, squelch, RF gain with an ATT → PRE → off button
@@ -30,15 +41,16 @@ Version 0.15.1 · Licensed under the [GPL-3.0](LICENSE).
   the computer and TCI programs (the USB output level returns on unmute); red
   while on
 - **LOCK** and **FINE**, as the radio's keys
-- Antenna: ANT1/ANT2, RX ANT, DRV, and the internal tuner (AT in line, ATun to
-  run a tune cycle)
+- Antenna: ANT 1 / 2, RX ANT, DRV, and the internal tuner (AT in line, AT TUNE
+  to run a tune cycle)
 
 **Transmit**
-- TX power, tune power, carrier level, mic gain, VOX, VOX level and VOX delay
+- TX power, mic gain, VOX and VOX level; tune power, carrier level and VOX
+  delay are on the Setup tab
 - Speech processor with input and output levels
 - TX monitor with level
-- TX filter low/high cut for SSB/AM and SSB-DATA
-- SEND (latching), TUN (latching tune carrier at tune power) and a momentary TX
+- Transmit audio filter low/high cut for SSB/AM and SSB-DATA (Setup tab)
+- SEND (latching), TX TUNE (latching tune carrier at tune power) and a momentary TX
   button. The app always releases transmit before disconnecting or quitting.
 
 **CW** tab
@@ -110,8 +122,7 @@ Version 0.15.1 · Licensed under the [GPL-3.0](LICENSE).
 - Named presets (save, apply, import/export as JSON) and per-mode auto-load
   into the User curve; see [Equalizer notes](#equalizer-notes)
 
-**Mini window** (**View → Mini Window**, ⌘⇧M, or **Mini** beside the power
-button)
+**Mini window** (**View → Mini Window**, ⌘⇧M, or **Mini** at the top right)
 - A small window to park in a corner of the screen: VFO A and B with A, B and
   A=B, the meter, MUT and a large hold-to-transmit TX
 - Drag it from corner size up to the full window's size; everything scales
@@ -122,14 +133,13 @@ button)
 **Radio and app**
 - Power the radio on and off from the app, including waking a radio that was
   switched off at its front panel
-- USB audio in/out levels
+- USB audio in/out levels (Setup tab)
 - Auto-detects the radio's USB serial port
 - Built-in simulator for trying the app without a radio
 - CAT monitor (**View → CAT Monitor**) showing raw radio traffic
-- **View → Style** (macOS, Fusion, …) and **View → Appearance** (System, Light,
-  Dark)
+- **View → Appearance** (System, Light, Dark)
 - Update check: at start the app asks GitHub for the latest release, and a note
-  beside the **Mini** button links to a newer one (✕ hides it until the next
+  in the top line links to a newer one (✕ hides it until the next
   version); **Help → Check for Updates…** asks on demand. Nothing is downloaded
   or installed for you
 

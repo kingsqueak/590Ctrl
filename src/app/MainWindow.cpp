@@ -2604,6 +2604,9 @@ void MainWindow::showDeepCwNote()
             note = tr("DeepCW starting…");
         else
             note = tr("2–4 s behind");
+        // No Radio/DeepCW choice to say which decoder this is (TS-590S).
+        if (!m_hasRadioDecoder && !note.startsWith(QLatin1String("DeepCW")))
+            note = tr("DeepCW · %1").arg(note);
     }
     m_decoderNote->setText(note);
     m_decoderNote->setToolTip(note);

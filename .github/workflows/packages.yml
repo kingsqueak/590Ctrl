@@ -1,7 +1,7 @@
 name: Packages
 
 # Builds the universal macOS DMG, deb, RPM and Arch packages for x86-64 and arm64,
-# and the Windows zip.
+# and the Windows installer and zip.
 # Runs on a version tag (v*) or by hand; the packages are the run's artifacts.
 # By hand, "only" limits the run to one job; a release needs all of them.
 # Every package carries the DeepCW decoder (its model and ONNX Runtime): macOS,
@@ -115,17 +115,50 @@ jobs:
         shell: bash
         run: ./scripts/make-windows.sh "$(cygpath -m "$RUNNER_TEMP/Qt/6.10.3/msvc2022_64")"
 
+      - name: Build the installer
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Null }
+          $dir = (Get-Item build-win/stage/590Ctrl-*).FullName
+          $ver = $dir -replace '^.*590Ctrl-', ''
+          & $iscc /Q "/DAppVersion=$ver" "/DSourceDir=$dir" scripts/windows-installer.iss
+          if ($LASTEXITCODE -ne 0) { throw "iscc failed: $LASTEXITCODE" }
+          Get-Item dist/*-setup.exe | Format-Table Name, Length
+
       - uses: actions/upload-artifact@v4
         with:
           name: 590ctrl-windows-x64
-          path: dist/*.zip
+          path: |
+            dist/*.zip
+            dist/*-setup.exe
           if-no-files-found: error
+
+      # The installer is what gets tested: install, start, uninstall.
+      - name: Install it
+        shell: pwsh
+        run: |
+          $setup = (Get-Item dist/*-setup.exe).FullName
+          Start-Process $setup -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/TASKS=desktopicon' -Wait
+          $dir = "$env:LOCALAPPDATA\Programs\590Ctrl"
+          foreach ($f in 'bin\590Ctrl.exe', 'bin\onnxruntime.dll', 'bin\DeepCw\model.onnx', 'unins000.exe') {
+            if (-not (Test-Path "$dir\$f")) { throw "installer left out $f" }
+          }
+          if (-not (Test-Path "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\590Ctrl.lnk")) { throw 'no Start menu entry' }
+          Write-Host "installed in $dir"
 
       - name: Start it
         shell: pwsh
+        run: ./scripts/smoke-windows.ps1 "$env:LOCALAPPDATA\Programs\590Ctrl" "$pwd/windows-screenshot.png"
+
+      - name: Uninstall it
+        shell: pwsh
         run: |
-          $dir = (Get-Item build-win/stage/590Ctrl-*).FullName
-          ./scripts/smoke-windows.ps1 $dir "$pwd/windows-screenshot.png"
+          $dir = "$env:LOCALAPPDATA\Programs\590Ctrl"
+          Start-Process "$dir\unins000.exe" -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -Wait
+          Start-Sleep -Seconds 3
+          if (Test-Path "$dir\bin\590Ctrl.exe") { throw 'uninstall left the program behind' }
+          Write-Host 'uninstalled'
 
       - uses: actions/upload-artifact@v4
         if: always()

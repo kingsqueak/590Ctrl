@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Build the Windows zip of 590Ctrl: the program with its Qt, nothing to install.
+# CI then makes the installer from the same folder (scripts/windows-installer.iss).
 # Run from Git Bash with Visual Studio and the official Qt.
 # Usage: scripts/make-windows.sh <path to Qt, e.g. C:/Qt/6.12.0/msvc2022_64>
 # Writes dist/590Ctrl-<version>-win-x64.zip

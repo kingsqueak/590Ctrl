@@ -28,6 +28,7 @@ short description of it.</p>
 <a href="#menu">Menu tab</a> ·
 <a href="#setup">Setup tab</a> ·
 <a href="#tci">Sharing the radio (TCI)</a> ·
+<a href="#ts590s">TS-590S</a> ·
 <a href="#mini">Mini window</a> ·
 <a href="#other">Monitor, appearance and updates</a> ·
 <a href="#keys">Keyboard shortcuts</a> ·
@@ -37,7 +38,7 @@ short description of it.</p>
 <a name="connect"></a>
 <h2>Connecting the radio</h2>
 <p>Connect the radio's USB-B port to the computer. That one cable carries CAT control (a serial port)
-and the radio's audio (a sound device named "USB Audio CODEC").</p>
+and the radio's audio (a sound device named "USB Audio CODEC"; Windows may call it "USB Audio Device").</p>
 <ul>
 <li><b>Port and speed:</b> open the <b>Setup</b> tab, or click the radio's name in the top line. 590Ctrl
 picks the radio's port by itself; <b>⟳</b> looks for ports again. The speed must match the radio's USB
@@ -245,8 +246,8 @@ and USB port speeds are shown but can't be changed here, since that would drop t
 radio</a>.</li>
 <li><b>Programs sharing the radio (TCI):</b> <b>Settings…</b> opens the <a href="#tci">TCI server</a>
 settings.</li>
-<li><b>Computer audio:</b> the USB audio levels. <b>USB in</b> (menu 071) is audio from the computer to the
-transmitter; <b>USB out</b> (menu 072) is received audio to the computer.</li>
+<li><b>Computer audio:</b> the USB audio levels. <b>USB in</b> (menu 071; 064 on a TS-590S) is audio from the
+computer to the transmitter; <b>USB out</b> (menu 072; 065 on a TS-590S) is received audio to the computer.</li>
 <li><b>Transmit set-up:</b> <b>Tune power</b> for TX TUNE, <b>Carrier</b> level for CW, FSK and AM, and <b>VOX
 delay</b>.</li>
 <li><b>Transmit audio filter:</b> the low and high cut of the transmit audio, for SSB and AM and for SSB-DATA.</li>
@@ -264,13 +265,41 @@ your network. TCI has no password, so anyone who can reach it can tune and key t
 <li><b>Share the radio's USB audio:</b> sends received audio to the programs and plays their transmit audio into
 the radio, so they need no sound device of their own. Leave it off if the program uses the USB Audio CODEC
 itself.</li>
-<li><b>Receive audio from / Transmit audio to:</b> the sound devices to use, normally the radio's.</li>
+<li><b>Receive audio from / Transmit audio to:</b> the sound devices to use. <b>Automatic (the radio's USB
+audio)</b> finds the radio's by name: a device with "Audio CODEC" in its name, or, when there is none, a
+"USB Audio Device" if the computer has exactly one. That is how Windows often lists the radio, sometimes
+with a number in front ("2- USB Audio Device"). With two or more of those, or any other name, choose the
+radio's devices here yourself.</li>
 </ul>
+<p>The tuning display and DeepCW on the CW tab listen through the same receive device, so the choice here
+serves them too, with the server on or off.</p>
 <p>In the program, choose TCI and enter the same address and port. In WSJT-X: Settings → Radio, rig
 <b>TCI Client RX1</b>, PTT method <b>CAT</b>; and under Settings → Audio choose <b>TCI audio</b> for both to
 use the shared audio.</p>
 <p>590Ctrl must be connected to the radio; until it is, the programs are told the radio is off. A program
 that disconnects while transmitting unkeys the radio.</p>
+
+<a name="ts590s"></a>
+<h2>TS-590S</h2>
+<p>590Ctrl works with the TS-590S as well as the TS-590SG, and shows which one it found in the top line.
+Use firmware 2.00 or newer. With a TS-590S these things differ:</p>
+<ul>
+<li><b>Menu numbers:</b> the two radios number their menus differently. USB port speed is menu 062 (068 on
+the SG), USB audio input level 064 (071) and output level 065 (072). The <a href="#menu">Menu tab</a> shows
+the TS-590S's own menus.</li>
+<li><b>CW decoder:</b> the TS-590S has no decoder of its own, so <b>DECODE</b> always uses DeepCW and there's no
+Radio / DeepCW choice or <b>Threshold</b>.</li>
+<li><b>Tune power:</b> the TS-590S has no separate TX TUNE power, so the Setup tab doesn't show it.</li>
+<li><b>TX monitor:</b> the level goes from 0 to 9, not 0 to 20.</li>
+<li><b>Filter:</b> SSB is always set by high and low cut, and SSB-DATA by width and shift; the radio has no
+menu to change that.</li>
+<li><b>Equalizer:</b> with firmware older than 2.00 the radio has no EQ command, so 590Ctrl sets the EQ curve
+through menus 030 (transmit) and 031 (receive) and says so when it connects. This path hasn't been tried
+on a radio.</li>
+<li><b>MUTE:</b> needs firmware 2.04 or newer.</li>
+<li><b>Audio on Windows:</b> the radio's sound device may appear as "USB Audio Device". See
+<a href="#tci">Sharing the radio (TCI)</a> if 590Ctrl doesn't find it.</li>
+</ul>
 
 <a name="mini"></a>
 <h2>Mini window</h2>
@@ -315,8 +344,11 @@ driver.</li>
 <li><b>The tuning display or DeepCW shows nothing on macOS:</b> they hear the radio through what macOS calls a
 microphone. Allow 590Ctrl in System Settings → Privacy &amp; Security → Microphone, then leave the CW tab and
 come back, or press DECODE again.</li>
-<li><b>"The radio's USB audio device wasn't found":</b> the computer doesn't see the "USB Audio CODEC". Check
-the USB cable, or choose the devices in the TCI settings.</li>
+<li><b>"The radio's USB audio device wasn't found":</b> the computer doesn't see a "USB Audio CODEC", or
+a single "USB Audio Device". Check the USB cable, or choose the radio's devices in <b>Tools → TCI Server…</b>.</li>
+<li><b>Tuning the radio doesn't show in the app:</b> another program sharing the serial port may be switching
+off the radio's reports. 590Ctrl switches them back on and says so; let that program reach the radio through
+<a href="#tci">TCI</a> instead.</li>
 <li><b>The tuning display is flat:</b> raise <b>USB out</b> under Computer audio on the Setup tab, and check
 MUTE is off.</li>
 <li><b>DeepCW prints nothing:</b> set the pitch to 400 Hz or more, and give it a few seconds.</li>

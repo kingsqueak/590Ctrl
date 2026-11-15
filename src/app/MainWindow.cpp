@@ -1588,9 +1588,9 @@ QWidget *MainWindow::createSetupPage()
     const int valueWidth = metrics.horizontalAdvance(tr("%1 ms").arg(3000)) + 6;
     const int nameWidth = metrics.horizontalAdvance(tr("Tune power")) + 6;
     m_usbInSlider = createLevelSlider(&Radio::setUsbAudioIn, kUsbAudioLevelMax);
-    m_usbInSlider->setToolTip(tr("USB audio input level (menu 071): audio from the computer to the transmitter"));
+    m_usbInSlider->setToolTip(tr("USB audio input level (menu 071; 064 on a TS-590S): audio from the computer to the transmitter"));
     m_usbOutSlider = createLevelSlider(&Radio::setUsbAudioOut, kUsbAudioLevelMax);
-    m_usbOutSlider->setToolTip(tr("USB audio output level (menu 072): received audio to the computer"));
+    m_usbOutSlider->setToolTip(tr("USB audio output level (menu 072; 065 on a TS-590S): received audio to the computer"));
     RowGrid audio(nameWidth, valueWidth);
     audio.addNumber(tr("USB in"), m_usbInSlider);
     audio.addNumber(tr("USB out"), m_usbOutSlider);

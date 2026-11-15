@@ -3,6 +3,7 @@ name: Packages
 # Builds the universal macOS DMG, deb, RPM and Arch packages for x86-64 and arm64,
 # and the Windows zip.
 # Runs on a version tag (v*) or by hand; the packages are the run's artifacts.
+# By hand, "only" limits the run to one job; a release needs all of them.
 # Every package carries the DeepCW decoder (its model and ONNX Runtime): macOS,
 # Linux and Windows. Each package script fetches ONNX Runtime and fails if the
 # model or the library is missing from what it built; keep it that way.
@@ -10,12 +11,19 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      only:
+        description: Build one kind of package only (a test build for one system)
+        type: choice
+        default: all
+        options: [all, deb, linux, windows, dmg]
 
 permissions:
   contents: read
 
 jobs:
   deb:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.only == 'all' || inputs.only == 'deb' }}
     strategy:
       matrix:
         runner: [ubuntu-26.04, ubuntu-26.04-arm]
@@ -42,6 +50,7 @@ jobs:
   # The deb uses Ubuntu's Qt. These carry the official Qt, and are built on an
   # older Ubuntu so they run on distributions with an older glibc.
   linux:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.only == 'all' || inputs.only == 'linux' }}
     strategy:
       fail-fast: false
       matrix:
@@ -88,6 +97,7 @@ jobs:
           if-no-files-found: error
 
   windows:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.only == 'all' || inputs.only == 'windows' }}
     runs-on: windows-2025
     steps:
       - uses: actions/checkout@v4
@@ -124,6 +134,7 @@ jobs:
           path: windows-screenshot.png
 
   dmg:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.only == 'all' || inputs.only == 'dmg' }}
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v4

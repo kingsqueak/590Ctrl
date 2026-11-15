@@ -61,6 +61,34 @@ private slots:
         QCOMPARE(sim->received().last(), QByteArray("AI0"));
     }
 
+    void turnsAutoInfoBackOn()
+    {
+        Radio radio;
+        SimulatorTransport *sim = connectSim(radio);
+        QSignalSpy messages(&radio, &Radio::message);
+        sim->setAutoInfo(0);
+        sim->setFrequencySilently(Vfo::A, 7'030'000);
+        radio.setMeterPolling(true);
+        QTRY_COMPARE(sim->autoInfo(), 2);
+        QTRY_COMPARE(radio.frequency(Vfo::A), 7'030'000);
+        QCOMPARE(messages.count(), 1);
+        // The restore on disconnect is still what the radio had at first.
+        radio.disconnectFromRadio();
+        QCOMPARE(sim->received().last(), QByteArray("AI0"));
+    }
+
+    void followsTheRadioWithoutAutoInfo()
+    {
+        // AI stays on but says nothing: the slow reads still catch a retune.
+        Radio radio;
+        SimulatorTransport *sim = connectSim(radio);
+        QSignalSpy messages(&radio, &Radio::message);
+        sim->setFrequencySilently(Vfo::B, 3'560'000);
+        radio.setMeterPolling(true);
+        QTRY_COMPARE(radio.frequency(Vfo::B), 3'560'000);
+        QCOMPARE(messages.count(), 0);
+    }
+
     void setsReachTheRadio()
     {
         Radio radio;

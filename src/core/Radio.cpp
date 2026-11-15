@@ -20,6 +20,8 @@ constexpr int kCwPollMs = 300;
 // Auto Information level used while connected: on, not persisted, so the
 // radio drops back to its own setting if the app dies without cleaning up.
 constexpr int kAutoInfoLevel = 2;
+constexpr int kAutoInfoResyncMs = 10'000;
+constexpr int kFrequencySetHoldMs = 500;
 // Leading ';' clears any partial command left in the radio's input buffer.
 // The radio answers it with "?;", which is expected and ignored.
 const QByteArray kFlushCommand = ";";
@@ -199,6 +201,10 @@ void Radio::teardown()
     m_awaitingIdentity = false;
     m_link.setTransport(nullptr);
     m_originalAutoInfo.reset();
+    m_autoInfoArmed = false;
+    m_autoInfoResync.invalidate();
+    m_freqSetAt[0].invalidate();
+    m_freqSetAt[1].invalidate();
     resetRadioState();
     setState(State::Disconnected);
 }
@@ -295,6 +301,7 @@ void Radio::setMeterPolling(bool on)
 void Radio::requestFullState()
 {
     m_link.query("FV;");
+    m_autoInfoArmed = false;
     m_link.query("AI;");
     m_link.send(cmd::autoInfo(kAutoInfoLevel));
     // Menu answers belong to whichever set is selected.
@@ -389,6 +396,12 @@ void Radio::pollMeter()
     // the same way in case. One per tick, so each is read every few hundred ms.
     static constexpr const char *panelKeys[] = {"VX;", "LK;", "FS;"};
     m_link.query(panelKeys[m_panelPoll++ % std::size(panelKeys)]);
+    // Everything else arrives through AI, which another program sharing the
+    // port can switch off, and which a radio may not send for every change.
+    // Check it is still on, and read the frequencies slowly so the display
+    // follows the tuning knob regardless.
+    static constexpr const char *stateReads[] = {"AI;", "FA;", "FB;"};
+    m_link.query(stateReads[m_statePoll++ % std::size(stateReads)]);
 }
 
 void Radio::pumpCw()
@@ -443,13 +456,33 @@ void Radio::handleFrame(const QByteArray &frame)
             useEqMenus();
         emit identified(m_modelId, m_firmware);
     } else if (name == "AI") {
+        const auto level = numberAt(frame, 2);
         if (!m_originalAutoInfo)
-            m_originalAutoInfo = numberAt(frame, 2);
+            m_originalAutoInfo = level;
+        if (!m_autoInfoArmed) {
+            m_autoInfoArmed = true;   // the answer ahead of our AI2
+        } else if (level && *level == 0 && m_state == State::Connected) {
+            // Something switched it off behind our back. Changes made at the
+            // radio since then were missed, so read everything again, but
+            // not over and over if it keeps happening.
+            if (!m_autoInfoResync.isValid() || m_autoInfoResync.elapsed() > kAutoInfoResyncMs) {
+                m_autoInfoResync.start();
+                emit message(tr("The radio's Auto Information was switched off (by another program?); "
+                                "switched it back on."));
+                requestFullState();
+            } else {
+                m_link.send(cmd::autoInfo(kAutoInfoLevel));
+            }
+        }
     } else if (name == "FA" || name == "FB") {
         const Vfo vfo = name == "FA" ? Vfo::A : Vfo::B;
         if (const auto hz = parseNumber(QByteArrayView(frame).sliced(2)); hz && frame.size() == 13) {
             qint64 &field = vfo == Vfo::A ? m_freqA : m_freqB;
-            if (field != *hz) {
+            // A read that was already on its way when we set the frequency
+            // answers with the old one; the next read settles it.
+            const QElapsedTimer &set = m_freqSetAt[vfo == Vfo::B];
+            const bool stale = set.isValid() && set.elapsed() < kFrequencySetHoldMs;
+            if (field != *hz && !stale) {
                 field = *hz;
                 emit frequencyChanged(vfo, *hz);
             }
@@ -928,7 +961,7 @@ void Radio::handleTimeout(const QByteArray &command)
     }
     // Meter, squelch and the front-panel key polls: the next poll will do.
     if (command != "SM0;" && command != "RM;" && command != "BY;" && command != "VX;" && command != "LK;"
-        && command != "FS;")
+        && command != "FS;" && command != "AI;" && command != "FA;" && command != "FB;")
         emit message(tr("Radio did not answer %1").arg(QString::fromLatin1(command)));
 }
 
@@ -942,6 +975,7 @@ void Radio::setFrequency(Vfo vfo, qint64 hz)
     m_link.send(cmd::frequency(vfo, hz), vfo == Vfo::B ? "FB" : "FA");
     // The radio doesn't report CAT-made changes back, so announce it here or
     // the display misses changes made by TCI clients.
+    m_freqSetAt[vfo == Vfo::B].start();
     qint64 &field = vfo == Vfo::B ? m_freqB : m_freqA;
     if (field != hz) {
         field = hz;

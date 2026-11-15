@@ -3,6 +3,7 @@
 #include "CatCodec.h"
 #include "CatLink.h"
 
+#include <QElapsedTimer>
 #include <QObject>
 #include <QTimer>
 
@@ -319,10 +320,14 @@ private:
     QTimer m_bootTimer;                // polls ID while the radio powers up
     int m_bootAttempts = 0;
     unsigned m_panelPoll = 0;          // which front-panel key pollMeter reads next
+    unsigned m_statePoll = 0;          // which fallback read pollMeter makes next
     bool m_keyed = false;              // this app sent TX and hasn't sent RX
     int m_modelId = 0;
     QString m_firmware;
     std::optional<int> m_originalAutoInfo;
+    bool m_autoInfoArmed = false;      // AI2 has been asked for since the last full sync
+    QElapsedTimer m_autoInfoResync;    // last full re-read after AI was found off
+    QElapsedTimer m_freqSetAt[2];      // when this app last set VFO A / B
 
     qint64 m_freqA = 0;
     qint64 m_freqB = 0;

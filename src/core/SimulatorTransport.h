@@ -72,6 +72,11 @@ public:
     int noiseReduction() const { return m_noiseReduction; }
     int nrLevel(int reduction) const { return m_nrLevels[reduction]; }
     void setUnresponsive(bool on) { m_unresponsive = on; }
+    // Another program on a shared port sending AI0, and a turn of the tuning
+    // knob that AI doesn't report.
+    void setAutoInfo(int level) { m_autoInfo = level; }
+    int autoInfo() const { return m_autoInfo; }
+    void setFrequencySilently(Vfo vfo, qint64 hz) { (vfo == Vfo::B ? m_freqB : m_freqA) = hz; }
     // Front-panel power-off: PS0, MU forgotten, menu values kept.
     void simulatePanelPowerOff();
     // PS0 state: answers PS only.

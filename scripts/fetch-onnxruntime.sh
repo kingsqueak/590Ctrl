@@ -45,7 +45,9 @@ fi
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 curl -fsSL -o "$TMP/$NAME.$EXT" "https://github.com/microsoft/onnxruntime/releases/download/v$VERSION/$NAME.$EXT"
-echo "$SHA256  $TMP/$NAME.$EXT" | shasum -a 256 -c - >/dev/null || { echo "Checksum mismatch for $NAME.$EXT" >&2; exit 1; }
+# sha256sum on Linux and in Git Bash, shasum on macOS.
+if command -v sha256sum >/dev/null 2>&1; then SUM=sha256sum; else SUM="shasum -a 256"; fi
+[ "$($SUM "$TMP/$NAME.$EXT" | cut -c1-64)" = "$SHA256" ] || { echo "Checksum mismatch for $NAME.$EXT" >&2; exit 1; }
 if [ "$EXT" = zip ]; then
     unzip -q "$TMP/$NAME.zip" -d "$TMP"
 else

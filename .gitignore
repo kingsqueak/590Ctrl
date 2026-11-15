@@ -6,3 +6,4 @@ compile_commands.json
 .DS_Store
 *.user
 build-release/
+third_party/

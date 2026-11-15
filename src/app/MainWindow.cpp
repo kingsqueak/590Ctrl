@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 
 #include "AppStyle.h"
+#include "CwWordFormer.h"
 #include "PowerButton.h"
 #include "CatMonitor.h"
 #include "EqualizerPanel.h"
@@ -367,7 +368,8 @@ MainWindow::MainWindow(QWidget *parent)
         for (QWidget *widget : std::as_const(m_tunePowerWidgets))
             widget->setVisible(model == kModelTs590SG);
         m_monitorSlider->setMaximum(txMonitorMax(model));
-        m_decoderGroup->setVisible(model == kModelTs590SG);   // the S has no decoder
+        m_hasRadioDecoder = model == kModelTs590SG;   // the S has no decoder of its own
+        refreshDecoder();
         setRadioInfo(tr("%1 · firmware %2 · %3").arg(name, firmware, m_radio.link()->transport()->description()),
                      true);
     });
@@ -408,9 +410,20 @@ MainWindow::MainWindow(QWidget *parent)
     connect(&m_radio, &Radio::cwQueueChanged, this, &MainWindow::refreshKeyer);
     connect(&m_radio, &Radio::morseDecoderChanged, this, &MainWindow::refreshDecoder);
     connect(&m_radio, &Radio::morseDecoded, this, [this](const QString &text) {
-        m_decoderText->moveCursor(QTextCursor::End);
-        m_decoderText->insertPlainText(text);
-        m_decoderText->ensureCursorVisible();
+        if (!deepCwChosen())   // or both would print
+            appendDecoded(text);
+    });
+    connect(&m_radioAudio, &RadioAudio::captured, this, [this](const QList<float> &frames) {
+        if (!m_deepCwDecoder)
+            return;
+        m_deepCwMono.resize(size_t(frames.size() / RadioAudio::kChannels));
+        for (size_t i = 0; i < m_deepCwMono.size(); ++i)
+            m_deepCwMono[i] = 0.5f * (frames[qsizetype(2 * i)] + frames[qsizetype(2 * i + 1)]);
+        m_deepCwDecoder->push(m_deepCwMono.data(), qsizetype(m_deepCwMono.size()));
+    });
+    connect(&m_radioAudio, &RadioAudio::failed, this, [this](const QString &message) {
+        if (m_deepCwDecoder)
+            failDeepCw(message);
     });
     connect(&m_radio, &Radio::antennaChanged, this, &MainWindow::refreshAntenna);
     connect(&m_radio, &Radio::attenuatorChanged, this, &MainWindow::refreshFrontEnd);
@@ -740,6 +753,10 @@ void MainWindow::shutDown()
     if (std::exchange(m_shutDown, true))
         return;
     m_tci.close();   // releases transmit if a TCI client keyed it
+    if (m_deepCwDecoder) {   // stops its thread before the app goes
+        m_radioAudio.drop(this);
+        m_deepCwDecoder.reset();
+    }
     m_radio.disconnectFromRadio();
     QSettings settings;
     settings.setValue(QStringLiteral("window/geometry"), saveGeometry());
@@ -1739,15 +1756,63 @@ QWidget *MainWindow::createCwPage()
     entryRow->addWidget(m_cwSendButton);
     entryRow->addWidget(m_cwStopButton);
 
-    // Morse decoder (TS-590SG): the radio streams what it decodes.
+    // Morse decoder: the radio's own (TS-590SG), which streams what it
+    // decodes, or DeepCW, a neural network run here on the radio's USB audio.
+    QSettings settings;
+    m_deepCw = settings.value(QStringLiteral("cw/decoder")).toString() == QLatin1String("deepcw");
+    m_deepCwOn = settings.value(QStringLiteral("cw/deepCwOn"), false).toBool();
+    auto *radioChoice = new QPushButton(tr("Radio"));
+    radioChoice->setToolTip(tr("The radio's Morse decoder: prints at once, best on clean signals"));
+    auto *deepChoice = new QPushButton(tr("DeepCW"));
+    deepChoice->setToolTip(tr("DeepCW, a neural network on the radio's USB audio: copies weak, fading and "
+                              "hand-sent CW far better, 2 to 4 seconds behind. Needs a pitch of %1 Hz or more.")
+                               .arg(DeepCwDecoder::kMinPitchHz));
+    m_decoderButtons = new QButtonGroup(this);
+    for (QPushButton *button : {radioChoice, deepChoice}) {
+        button->setCheckable(true);
+        m_decoderButtons->addButton(button, button == deepChoice ? 1 : 0);
+    }
+    (m_deepCw ? deepChoice : radioChoice)->setChecked(true);
+    m_decoderChoice = new QWidget;
+    m_decoderChoice->setLayout(createSegment({radioChoice, deepChoice}));
+    connect(m_decoderButtons, &QButtonGroup::idClicked, this, [this](int id) {
+        const bool deep = id == 1;
+        if (deep == m_deepCw)
+            return;
+        // DECODE stays as it was, on the decoder now chosen.
+        const bool on = m_decoderButton->isChecked();
+        m_deepCw = deep;
+        m_deepCwOn = deep && on;
+        if (m_radio.morseDecoder() != (!deep && on))
+            m_radio.setMorseDecoder(!deep && on);
+        QSettings settings;
+        settings.setValue(QStringLiteral("cw/decoder"), deep ? QStringLiteral("deepcw") : QStringLiteral("radio"));
+        settings.setValue(QStringLiteral("cw/deepCwOn"), m_deepCwOn);
+        refreshDecoder();
+    });
+
     m_decoderButton = new QPushButton(tr("DECODE"));
     m_decoderButton->setCheckable(true);
-    m_decoderButton->setToolTip(tr("The radio's Morse decoder (CW mode)"));
+    m_decoderButton->setToolTip(tr("Decode the Morse being received (CW mode)"));
     connect(m_decoderButton, &QPushButton::clicked, this, [this](bool on) {
-        m_radio.setMorseDecoder(on);
+        if (deepCwChosen()) {
+            m_deepCwOn = on;
+            m_deepCwFailed = false;   // pressing it again is the way to retry
+            QSettings().setValue(QStringLiteral("cw/deepCwOn"), on);
+        } else {
+            m_radio.setMorseDecoder(on);
+        }
         refreshDecoder();
     });
     m_radioControls << m_decoderButton;
+    m_wordsButton = new QPushButton(tr("WORDS"));
+    m_wordsButton->setCheckable(true);
+    m_wordsButton->setChecked(settings.value(QStringLiteral("cw/words"), true).toBool());
+    m_wordsButton->setToolTip(tr("Put back the word spaces the decoder missed: CQSSK1XMK1XM becomes CQ SS K1XM K1XM"));
+    connect(m_wordsButton, &QPushButton::clicked, this, [this](bool on) {
+        QSettings().setValue(QStringLiteral("cw/words"), on);
+        showDecoded();
+    });
     m_decoderSlider = createLevelSlider(&Radio::setDecoderThreshold, kDecoderThresholdMax);
     m_decoderSlider->setMinimum(kDecoderThresholdMin);
     m_decoderSlider->setPageStep(3);
@@ -1757,17 +1822,24 @@ QWidget *MainWindow::createCwPage()
     thresholdValue->setFixedWidth(metrics.horizontalAdvance(QStringLiteral("00")) + 6);
     thresholdValue->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     connect(m_decoderSlider, &QSlider::valueChanged, thresholdValue, qOverload<int>(&QLabel::setNum));
+    m_decoderNote = new QLabel;
+    m_decoderNote->setProperty("dim", true);
+    m_decoderNote->setMinimumWidth(0);
+    m_decoderNote->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     m_decoderText = new QPlainTextEdit;
     m_decoderText->setReadOnly(true);
     QFont decoderFont = QFontDatabase::systemFont(QFontDatabase::FixedFont);
     decoderFont.setPointSize(kCwTextPointSize);
     m_decoderText->setFont(decoderFont);
-    m_decoderText->setMaximumBlockCount(500);
     m_decoderText->setPlaceholderText(tr("Decoded text appears here"));
     auto *clearButton = new QPushButton(tr("Clear"));
-    connect(clearButton, &QPushButton::clicked, m_decoderText, &QPlainTextEdit::clear);
+    connect(clearButton, &QPushButton::clicked, this, [this] {
+        m_decodedRaw.clear();
+        showDecoded();
+    });
     auto *thresholdLabel = new QLabel(tr("Threshold"));
     thresholdLabel->setProperty("dim", true);
+    m_thresholdWidgets = {thresholdLabel, m_decoderSlider, thresholdValue};
 
     m_decoderGroup = new QWidget;
     auto *decoderLayout = new QVBoxLayout(m_decoderGroup);
@@ -1776,10 +1848,13 @@ QWidget *MainWindow::createCwPage()
     auto *decoderRow = new QHBoxLayout;
     decoderRow->setSpacing(6);
     decoderRow->addWidget(createHeading(tr("Decoder")), 1);
+    decoderRow->addWidget(m_decoderChoice);
     decoderRow->addWidget(m_decoderButton);
+    decoderRow->addWidget(m_wordsButton);
     decoderRow->addWidget(thresholdLabel);
     decoderRow->addWidget(m_decoderSlider, 1);
     decoderRow->addWidget(thresholdValue);
+    decoderRow->addWidget(m_decoderNote, 2);
     decoderRow->addWidget(clearButton);
     decoderLayout->addLayout(decoderRow);
     decoderLayout->addWidget(m_decoderText, 1);
@@ -2349,23 +2424,148 @@ void MainWindow::refreshKeyer()
     m_cwQueueLabel->setText(queued > 0             ? tr("Sending…")
                             : connected && !cw ? tr("Switch to CW or CW-R to send")
                                                : QString());
+    showDeepCwNote();   // the pitch may have changed
 }
 
 void MainWindow::refreshDecoder()
 {
     const bool connected = m_radio.state() == Radio::State::Connected;
     // The radio keeps the decoder setting outside CW but only decodes in CW,
-    // so show it off there.
+    // so show it off there. DeepCW keeps to the same rule.
     const bool cw = connected && isCwMode(m_radio.mode());
-    const bool on = cw && m_radio.morseDecoder();
+    const bool deep = deepCwChosen();
+    const bool on = cw && (deep ? m_deepCwOn : m_radio.morseDecoder());
+    m_decoderGroup->setVisible(m_hasRadioDecoder || DeepCwDecoder::isBuilt());
+    m_decoderChoice->setVisible(m_hasRadioDecoder && DeepCwDecoder::isBuilt());
+    m_decoderButtons->button(deep ? 1 : 0)->setChecked(true);
     m_decoderButton->setChecked(on);
     m_decoderButton->setEnabled(cw);
+    for (QWidget *widget : std::as_const(m_thresholdWidgets))
+        widget->setVisible(!deep);
+    m_decoderNote->setVisible(deep);
     m_decoderSlider->setEnabled(on);
     if (const auto level = m_radio.decoderThreshold(); level && !m_decoderSlider->isSliderDown()) {
         m_applyingRadioState = true;
         m_decoderSlider->setValue(*level);
         m_applyingRadioState = false;
     }
+    updateDeepCw();
+}
+
+// DeepCW is the only decoder there is on a TS-590S.
+bool MainWindow::deepCwChosen() const
+{
+    return DeepCwDecoder::isBuilt() && (m_deepCw || !m_hasRadioDecoder);
+}
+
+void MainWindow::updateDeepCw()
+{
+    const bool wanted = deepCwChosen() && m_deepCwOn && m_radio.state() == Radio::State::Connected
+                        && isCwMode(m_radio.mode());
+    if (!wanted) {
+        stopDeepCw();
+        m_deepCwFailed = false;
+        m_deepCwError.clear();
+    } else if (!m_deepCwDecoder && !m_deepCwFailed) {
+        // Receive audio comes in through what macOS treats as a microphone.
+        const QMicrophonePermission microphone;
+        switch (qApp->checkPermission(microphone)) {
+        case Qt::PermissionStatus::Undetermined:
+            qApp->requestPermission(microphone, this, [this](const QPermission &) { updateDeepCw(); });
+            return;
+        case Qt::PermissionStatus::Denied:
+            failDeepCw(tr("DeepCW needs the radio's audio: allow 590Ctrl in System Settings → Privacy & Security → "
+                          "Microphone."));
+            return;
+        case Qt::PermissionStatus::Granted:
+            break;
+        }
+        if (m_radioAudio.input().isNull() || m_radioAudio.output().isNull()) {
+            // The devices chosen for TCI, or the radio's codec.
+            QSettings settings;
+            m_radioAudio.setDevices(
+                RadioAudio::findInput(settings.value(QStringLiteral("tci/audioInput")).toByteArray()),
+                RadioAudio::findOutput(settings.value(QStringLiteral("tci/audioOutput")).toByteArray()));
+        }
+        if (!m_radioAudio.hold(this)) {
+            failDeepCw(m_radioAudio.errorString());
+            return;
+        }
+        m_deepCwReady = false;
+        m_deepCwDecoder = std::make_unique<DeepCwDecoder>();
+        connect(m_deepCwDecoder.get(), &DeepCwDecoder::ready, this, [this] {
+            m_deepCwReady = true;
+            showDeepCwNote();
+        });
+        connect(m_deepCwDecoder.get(), &DeepCwDecoder::decoded, this, &MainWindow::appendDecoded);
+        connect(m_deepCwDecoder.get(), &DeepCwDecoder::failed, this, &MainWindow::failDeepCw);
+        m_deepCwDecoder->start();
+    }
+    showDeepCwNote();
+}
+
+void MainWindow::stopDeepCw()
+{
+    if (!m_deepCwDecoder)
+        return;
+    m_radioAudio.drop(this);
+    // Not deleted here: this may run from one of its own signals.
+    m_deepCwDecoder->disconnect(this);
+    m_deepCwDecoder.release()->deleteLater();
+}
+
+// It can't run, or stopped. The note stays until DECODE is pressed again.
+void MainWindow::failDeepCw(const QString &message)
+{
+    stopDeepCw();
+    m_deepCwFailed = true;
+    m_deepCwError = message;
+    showDeepCwNote();
+}
+
+void MainWindow::showDeepCwNote()
+{
+    QString note;
+    if (m_deepCwFailed) {
+        note = m_deepCwError;
+    } else if (m_deepCwDecoder) {
+        const auto pitch = m_radio.cwPitch();
+        if (pitch && cwPitchHz(*pitch) < DeepCwDecoder::kMinPitchHz)
+            note = tr("DeepCW needs a pitch of %1 Hz or more").arg(DeepCwDecoder::kMinPitchHz);
+        else if (!m_deepCwReady)
+            note = tr("DeepCW starting…");
+        else
+            note = tr("2–4 s behind");
+    }
+    m_decoderNote->setText(note);
+    m_decoderNote->setToolTip(note);
+}
+
+void MainWindow::appendDecoded(const QString &text)
+{
+    constexpr qsizetype maxChars = 4000;
+    m_decodedRaw += text;
+    if (m_decodedRaw.size() > maxChars)
+        m_decodedRaw = m_decodedRaw.right(maxChars);
+    showDecoded();
+}
+
+// Forming words can change text already shown, once a callsign has been
+// seen; usually it only adds to the end.
+void MainWindow::showDecoded()
+{
+    const QString text = m_wordsButton->isChecked() ? formCwWords(m_decodedRaw) : m_decodedRaw;
+    if (text == m_decodedShown)
+        return;
+    if (!m_decodedShown.isEmpty() && text.startsWith(m_decodedShown)) {
+        m_decoderText->moveCursor(QTextCursor::End);
+        m_decoderText->insertPlainText(text.mid(m_decodedShown.size()));
+    } else {
+        m_decoderText->setPlainText(text);
+        m_decoderText->moveCursor(QTextCursor::End);
+    }
+    m_decoderText->ensureCursorVisible();
+    m_decodedShown = text;
 }
 
 void MainWindow::refreshAgc()

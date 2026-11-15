@@ -36,8 +36,12 @@ public:
     QAudioDevice input() const { return m_inputDevice; }
     QAudioDevice output() const { return m_outputDevice; }
 
-    bool start();
-    void stop();
+    // The codec has several users (the TCI server, the DeepCW decoder): it
+    // runs while any of them holds it. False if it couldn't start; see
+    // errorString(). A failure while running drops every hold.
+    bool hold(const QObject *user);
+    void drop(const QObject *user);
+    bool isHeldBy(const QObject *user) const { return m_users.contains(user); }
     bool isRunning() const { return m_source != nullptr; }
     QString errorString() const { return m_error; }
 
@@ -53,6 +57,9 @@ signals:
     void failed(const QString &message);
 
 private:
+    bool start();
+    void stop();
+    void fail(const QString &message);
     void readInput();
     void pumpOutput();
 
@@ -67,6 +74,7 @@ private:
     std::deque<float> m_playQueue;   // mono
     QTimer m_pump;
     QString m_error;
+    QList<const QObject *> m_users;
 };
 
 }   // namespace ts590

@@ -238,7 +238,7 @@ void TciServer::setAudio(RadioAudio *audio)
 {
     if (m_audio) {
         m_audio->disconnect(this);
-        m_audio->stop();
+        m_audio->drop(this);
     }
     m_audio = audio;
     if (m_audio) {
@@ -696,15 +696,15 @@ void TciServer::updateAudio()
         return;
     const bool wanted = m_txClient || std::any_of(m_clients.cbegin(), m_clients.cend(),
                                                   [](const Client &c) { return c.audio || c.lineOut; });
-    if (wanted && !m_audio->isRunning()) {
-        if (m_audio->start()) {
+    if (wanted && !m_audio->isHeldBy(this)) {
+        if (m_audio->hold(this)) {
             m_audioFailed = false;
         } else if (!m_audioFailed) {
             m_audioFailed = true;
             emit audioError(m_audio->errorString());
         }
-    } else if (!wanted && m_audio->isRunning()) {
-        m_audio->stop();
+    } else if (!wanted && m_audio->isHeldBy(this)) {
+        m_audio->drop(this);
     }
 }
 

@@ -31,7 +31,35 @@ qt_add_library(ts590core STATIC
     src/core/Resampler.h src/core/Resampler.cpp
     src/core/RadioAudio.h src/core/RadioAudio.cpp
     src/core/UpdateChecker.h src/core/UpdateChecker.cpp
+    src/core/CwWordFormer.h src/core/CwWordFormer.cpp
+    src/core/DeepCwDecoder.h src/core/DeepCwDecoder.cpp
 )
+# The words the CW word former may split run-together copy into.
+qt_add_resources(ts590core "cwwords" PREFIX "/" BASE resources FILES resources/cw-words.txt)
+
+# The DeepCW decoder runs its model in ONNX Runtime, which is loaded at run
+# time: only the headers are needed to build. scripts/fetch-onnxruntime.sh
+# puts it in third_party/onnxruntime. Without it there's no DeepCW.
+set(ONNXRUNTIME_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/onnxruntime" CACHE PATH
+    "ONNX Runtime (include/ and lib/), for the DeepCW decoder")
+if(EXISTS "${ONNXRUNTIME_DIR}/include/onnxruntime_cxx_api.h")
+    set(DEEPCW ON)
+    target_compile_definitions(ts590core PRIVATE HAVE_ONNXRUNTIME)
+    target_include_directories(ts590core SYSTEM PRIVATE "${ONNXRUNTIME_DIR}/include")
+    # The library itself, not the symlinks to it.
+    file(GLOB ONNXRUNTIME_LIBRARY
+        "${ONNXRUNTIME_DIR}/lib/libonnxruntime.*.*.*.dylib"
+        "${ONNXRUNTIME_DIR}/lib/libonnxruntime.so.*.*.*"
+        "${ONNXRUNTIME_DIR}/lib/onnxruntime.dll")
+    set(DEEPCW_MODEL_FILES
+        resources/deepcw/model.onnx resources/deepcw/model.onnx.json
+        resources/deepcw/LICENSE resources/deepcw/README.md)
+    set(ONNXRUNTIME_NOTICES "${ONNXRUNTIME_DIR}/LICENSE" "${ONNXRUNTIME_DIR}/ThirdPartyNotices.txt")
+    message(STATUS "DeepCW: ONNX Runtime from ${ONNXRUNTIME_DIR}")
+else()
+    set(DEEPCW OFF)
+    message(STATUS "DeepCW: off (no ONNX Runtime in ${ONNXRUNTIME_DIR}; see scripts/fetch-onnxruntime.sh)")
+endif()
 target_include_directories(ts590core PUBLIC src/core)
 target_link_libraries(ts590core PUBLIC Qt6::Core Qt6::SerialPort Qt6::Network Qt6::WebSockets Qt6::Multimedia)
 
@@ -61,6 +89,13 @@ if(WIN32)
 endif()
 target_link_libraries(590Ctrl PRIVATE ts590core Qt6::Widgets Qt6::Multimedia)
 target_compile_definitions(590Ctrl PRIVATE PROJECT_VERSION="${PROJECT_VERSION}")
+# DeepCW's model and ONNX Runtime go inside the Mac bundle.
+if(DEEPCW AND APPLE)
+    target_sources(590Ctrl PRIVATE ${DEEPCW_MODEL_FILES} ${ONNXRUNTIME_LIBRARY} ${ONNXRUNTIME_NOTICES})
+    set_source_files_properties(${DEEPCW_MODEL_FILES} PROPERTIES MACOSX_PACKAGE_LOCATION Resources/DeepCw)
+    set_source_files_properties(${ONNXRUNTIME_LIBRARY} PROPERTIES MACOSX_PACKAGE_LOCATION Frameworks)
+    set_source_files_properties(${ONNXRUNTIME_NOTICES} PROPERTIES MACOSX_PACKAGE_LOCATION Resources/onnxruntime)
+endif()
 set_target_properties(590Ctrl PROPERTIES
     MACOSX_BUNDLE ON
     MACOSX_BUNDLE_BUNDLE_NAME 590Ctrl
@@ -80,11 +115,27 @@ qt_generate_deploy_app_script(TARGET 590Ctrl OUTPUT_SCRIPT deploy_script NO_UNSU
 install(SCRIPT ${deploy_script})
 
 if(BUILD_TESTING)
-    foreach(test tst_catcodec tst_catlink tst_radio tst_eqpresets tst_qrz tst_tciserver tst_resampler tst_updatechecker)
+    set(TESTS tst_catcodec tst_catlink tst_radio tst_eqpresets tst_qrz tst_tciserver tst_resampler tst_updatechecker
+        tst_cwwordformer)
+    if(DEEPCW)
+        list(APPEND TESTS tst_deepcw)
+    endif()
+    foreach(test ${TESTS})
         qt_add_executable(${test} tests/${test}.cpp)
         target_link_libraries(${test} PRIVATE ts590core Qt6::Test)
         add_test(NAME ${test} COMMAND ${test})
     endforeach()
+    if(DEEPCW)
+        # The model and the library where the decoder looks for them.
+        set(DEEPCW_TEST_DIR "${CMAKE_CURRENT_BINARY_DIR}/deepcw")
+        file(MAKE_DIRECTORY "${DEEPCW_TEST_DIR}")
+        foreach(file ${ONNXRUNTIME_LIBRARY} resources/deepcw/model.onnx resources/deepcw/model.onnx.json)
+            get_filename_component(path "${file}" ABSOLUTE)
+            get_filename_component(name "${file}" NAME)
+            file(CREATE_LINK "${path}" "${DEEPCW_TEST_DIR}/${name}" SYMBOLIC)
+        endforeach()
+        set_tests_properties(tst_deepcw PROPERTIES ENVIRONMENT "CTRL590_DEEPCW_DIR=${DEEPCW_TEST_DIR}")
+    endif()
 
     # Renders the main window to PNG files without a radio or a screen, on
     # the simulator and with throwaway settings. See tools/ui-shots/README.md.

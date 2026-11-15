@@ -70,8 +70,32 @@ void RadioAudio::setDevices(const QAudioDevice &input, const QAudioDevice &outpu
     stop();
     m_inputDevice = input;
     m_outputDevice = output;
-    if (running)
-        start();
+    if (running && !start())
+        fail(m_error);
+}
+
+bool RadioAudio::hold(const QObject *user)
+{
+    if (!start())
+        return false;
+    if (!m_users.contains(user))
+        m_users.append(user);
+    return true;
+}
+
+void RadioAudio::drop(const QObject *user)
+{
+    m_users.removeAll(user);
+    if (m_users.isEmpty())
+        stop();
+}
+
+void RadioAudio::fail(const QString &message)
+{
+    m_error = message;
+    m_users.clear();
+    stop();
+    emit failed(m_error);
 }
 
 bool RadioAudio::start()
@@ -101,16 +125,12 @@ bool RadioAudio::start()
     // A device unplugged while running reports through the state change.
     connect(m_source, &QAudioSource::stateChanged, this, [this](QtAudio::State) {
         if (m_source && m_source->error() == QtAudio::FatalError) {
-            m_error = tr("The radio's USB audio input stopped.");
-            stop();
-            emit failed(m_error);
+            fail(tr("The radio's USB audio input stopped."));
         }
     });
     connect(m_sink, &QAudioSink::stateChanged, this, [this](QtAudio::State) {
         if (m_sink && m_sink->error() == QtAudio::FatalError) {
-            m_error = tr("The radio's USB audio output stopped.");
-            stop();
-            emit failed(m_error);
+            fail(tr("The radio's USB audio output stopped."));
         }
     });
     m_pump.start();

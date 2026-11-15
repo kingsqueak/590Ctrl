@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CatCodec.h"
+#include "DeepCwDecoder.h"
 #include "EqAutoLoader.h"
 #include "EqPresetLibrary.h"
 #include "Qrz.h"
@@ -11,6 +12,9 @@
 
 #include <QMainWindow>
 #include <QTimer>
+
+#include <memory>
+#include <vector>
 
 class QAction;
 class QBoxLayout;
@@ -98,6 +102,14 @@ private:
     void refreshSquelchOpen();
     void refreshKeyer();
     void refreshDecoder();
+    // The CW tab's decoders: the radio's own, or DeepCW on the radio's USB audio.
+    bool deepCwChosen() const;
+    void updateDeepCw();   // start or stop DeepCW to match the tab and the radio
+    void stopDeepCw();
+    void failDeepCw(const QString &message);
+    void showDeepCwNote();
+    void appendDecoded(const QString &text);
+    void showDecoded();
     // QRZ
     void loadQrzAccount();
     void editQrzAccount();
@@ -220,10 +232,25 @@ private:
     QPushButton *m_cwSendButton = nullptr;
     QPushButton *m_cwStopButton = nullptr;
     QLabel *m_cwQueueLabel = nullptr;
-    QWidget *m_decoderGroup = nullptr;      // TS-590SG only
+    QWidget *m_decoderGroup = nullptr;
+    QWidget *m_decoderChoice = nullptr;     // Radio | DeepCW, when there are both
+    QButtonGroup *m_decoderButtons = nullptr;
     QPushButton *m_decoderButton = nullptr;
+    QPushButton *m_wordsButton = nullptr;
+    QList<QWidget *> m_thresholdWidgets;    // the radio's decoder only
     QSlider *m_decoderSlider = nullptr;
+    QLabel *m_decoderNote = nullptr;        // DeepCW's state
     QPlainTextEdit *m_decoderText = nullptr;
+    QString m_decodedRaw;                   // what the decoder printed
+    QString m_decodedShown;                 // and what the tab shows: words formed, if WORDS is on
+    bool m_hasRadioDecoder = true;          // TS-590SG; the S has none
+    bool m_deepCw = false;                  // DeepCW chosen over the radio's decoder
+    bool m_deepCwOn = false;                // and its DECODE button
+    bool m_deepCwFailed = false;            // it stopped: don't retry until DECODE is pressed again
+    bool m_deepCwReady = false;
+    QString m_deepCwError;
+    std::unique_ptr<ts590::DeepCwDecoder> m_deepCwDecoder;
+    std::vector<float> m_deepCwMono;
 
     qrz::Client m_qrz;
     std::optional<qrz::LookupResponse> m_lastLookup;

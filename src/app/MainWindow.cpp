@@ -4,6 +4,7 @@
 #include "CwWordFormer.h"
 #include "PowerButton.h"
 #include "CatMonitor.h"
+#include "CwSpectrum.h"
 #include "EqualizerPanel.h"
 #include "MenuPanel.h"
 #include "MiniWindow.h"
@@ -47,6 +48,7 @@
 #include <QStyle>
 #include <QStyleFactory>
 #include <QTableWidget>
+#include <QTextBrowser>
 #include <QTabWidget>
 #include <QTimeZone>
 #include <QToolButton>
@@ -345,6 +347,8 @@ MainWindow::MainWindow(QWidget *parent)
 
     // On macOS the About roles move these into the application menu.
     QMenu *helpMenu = menuBar()->addMenu(tr("&Help"));
+    QAction *helpAction = helpMenu->addAction(tr("590Ctrl Help"), this, &MainWindow::showHelp);
+    helpAction->setShortcut(QKeySequence::HelpContents);
     QAction *aboutAction = helpMenu->addAction(tr("About 590Ctrl"), this, &MainWindow::showAbout);
     aboutAction->setMenuRole(QAction::AboutRole);
     QAction *aboutQtAction = helpMenu->addAction(tr("About Qt"), qApp, &QApplication::aboutQt);
@@ -414,17 +418,25 @@ MainWindow::MainWindow(QWidget *parent)
             appendDecoded(text);
     });
     connect(&m_radioAudio, &RadioAudio::captured, this, [this](const QList<float> &frames) {
-        if (!m_deepCwDecoder)
+        if (!m_deepCwDecoder && !m_cwSpectrum->isRunning())
             return;
-        m_deepCwMono.resize(size_t(frames.size() / RadioAudio::kChannels));
-        for (size_t i = 0; i < m_deepCwMono.size(); ++i)
-            m_deepCwMono[i] = 0.5f * (frames[qsizetype(2 * i)] + frames[qsizetype(2 * i + 1)]);
-        m_deepCwDecoder->push(m_deepCwMono.data(), qsizetype(m_deepCwMono.size()));
+        m_rxMono.resize(size_t(frames.size() / RadioAudio::kChannels));
+        for (size_t i = 0; i < m_rxMono.size(); ++i)
+            m_rxMono[i] = 0.5f * (frames[qsizetype(2 * i)] + frames[qsizetype(2 * i + 1)]);
+        if (m_deepCwDecoder)
+            m_deepCwDecoder->push(m_rxMono.data(), qsizetype(m_rxMono.size()));
+        m_cwSpectrum->addSamples(m_rxMono.data(), qsizetype(m_rxMono.size()));
     });
     connect(&m_radioAudio, &RadioAudio::failed, this, [this](const QString &message) {
         if (m_deepCwDecoder)
             failDeepCw(message);
+        if (m_cwSpectrum->isRunning()) {
+            m_cwSpectrumFailed = true;
+            m_cwSpectrum->stop(message);
+        }
     });
+    // Queued: by then it's settled whether the display is on the screen.
+    connect(m_cwSpectrum, &CwSpectrum::shownChanged, this, &MainWindow::updateCwSpectrum, Qt::QueuedConnection);
     connect(&m_radio, &Radio::antennaChanged, this, &MainWindow::refreshAntenna);
     connect(&m_radio, &Radio::attenuatorChanged, this, &MainWindow::refreshFrontEnd);
     connect(&m_radio, &Radio::preampChanged, this, &MainWindow::refreshFrontEnd);
@@ -753,6 +765,7 @@ void MainWindow::shutDown()
     if (std::exchange(m_shutDown, true))
         return;
     m_tci.close();   // releases transmit if a TCI client keyed it
+    m_radioAudio.drop(m_cwSpectrum);
     if (m_deepCwDecoder) {   // stops its thread before the app goes
         m_radioAudio.drop(this);
         m_deepCwDecoder.reset();
@@ -1712,6 +1725,7 @@ QWidget *MainWindow::createCwPage()
     auto *tuneRow = new QHBoxLayout;
     tuneRow->addWidget(m_cwTuneButton);
     tuneRow->addStretch();
+    m_cwSpectrum = new CwSpectrum;
 
     auto *keyer = new QWidget;
     auto *keyerLayout = new QVBoxLayout(keyer);
@@ -1720,7 +1734,8 @@ QWidget *MainWindow::createCwPage()
     keyerLayout->addWidget(createHeading(tr("Keyer")));
     keyerLayout->addLayout(keyerRows.layout());
     keyerLayout->addLayout(tuneRow);
-    keyerLayout->addStretch();
+    keyerLayout->addSpacing(4);
+    keyerLayout->addWidget(m_cwSpectrum, 1);
     m_cwKeyer = keyer;
 
     // Keyboard CW: Enter (or SEND) queues the line; the radio keys it at the
@@ -2413,6 +2428,7 @@ void MainWindow::refreshKeyer()
         m_breakInDelaySlider->setValue(*ms / kBreakInDelayStep);
     if (const auto index = m_radio.cwPitch(); index && !m_pitchSlider->isSliderDown())
         m_pitchSlider->setValue(*index);
+    m_cwSpectrum->setPitchHz(cwPitchHz(m_pitchSlider->value()));
     m_applyingRadioState = false;
     m_breakInButton->setChecked(connected && m_radio.vox());
 
@@ -2450,6 +2466,7 @@ void MainWindow::refreshDecoder()
         m_applyingRadioState = false;
     }
     updateDeepCw();
+    updateCwSpectrum();
 }
 
 // DeepCW is the only decoder there is on a TS-590S.
@@ -2467,29 +2484,15 @@ void MainWindow::updateDeepCw()
         m_deepCwFailed = false;
         m_deepCwError.clear();
     } else if (!m_deepCwDecoder && !m_deepCwFailed) {
-        // Receive audio comes in through what macOS treats as a microphone.
-        const QMicrophonePermission microphone;
-        switch (qApp->checkPermission(microphone)) {
-        case Qt::PermissionStatus::Undetermined:
-            qApp->requestPermission(microphone, this, [this](const QPermission &) { updateDeepCw(); });
+        QString error;
+        switch (holdRadioAudio(this, &error)) {
+        case AudioHold::Asking:
             return;
-        case Qt::PermissionStatus::Denied:
-            failDeepCw(tr("DeepCW needs the radio's audio: allow 590Ctrl in System Settings → Privacy & Security → "
-                          "Microphone."));
+        case AudioHold::Failed:
+            failDeepCw(error);
             return;
-        case Qt::PermissionStatus::Granted:
+        case AudioHold::Held:
             break;
-        }
-        if (m_radioAudio.input().isNull() || m_radioAudio.output().isNull()) {
-            // The devices chosen for TCI, or the radio's codec.
-            QSettings settings;
-            m_radioAudio.setDevices(
-                RadioAudio::findInput(settings.value(QStringLiteral("tci/audioInput")).toByteArray()),
-                RadioAudio::findOutput(settings.value(QStringLiteral("tci/audioOutput")).toByteArray()));
-        }
-        if (!m_radioAudio.hold(this)) {
-            failDeepCw(m_radioAudio.errorString());
-            return;
         }
         m_deepCwReady = false;
         m_deepCwDecoder = std::make_unique<DeepCwDecoder>();
@@ -2502,6 +2505,71 @@ void MainWindow::updateDeepCw()
         m_deepCwDecoder->start();
     }
     showDeepCwNote();
+}
+
+// Starts the radio's USB audio for this user, asking for the microphone
+// permission first if it hasn't been given: Asking, and the users are updated
+// again once it's answered.
+MainWindow::AudioHold MainWindow::holdRadioAudio(const QObject *user, QString *error)
+{
+    // Receive audio comes in through what macOS treats as a microphone.
+    const QMicrophonePermission microphone;
+    switch (qApp->checkPermission(microphone)) {
+    case Qt::PermissionStatus::Undetermined:
+        if (!std::exchange(m_askingForAudio, true)) {
+            qApp->requestPermission(microphone, this, [this](const QPermission &) {
+                m_askingForAudio = false;
+                updateDeepCw();
+                updateCwSpectrum();
+            });
+        }
+        return AudioHold::Asking;
+    case Qt::PermissionStatus::Denied:
+        *error = tr("590Ctrl needs the radio's audio: allow it in System Settings → Privacy & Security → "
+                    "Microphone.");
+        return AudioHold::Failed;
+    case Qt::PermissionStatus::Granted:
+        break;
+    }
+    if (m_radioAudio.input().isNull() || m_radioAudio.output().isNull()) {
+        // The devices chosen for TCI, or the radio's codec.
+        QSettings settings;
+        m_radioAudio.setDevices(RadioAudio::findInput(settings.value(QStringLiteral("tci/audioInput")).toByteArray()),
+                                RadioAudio::findOutput(settings.value(QStringLiteral("tci/audioOutput")).toByteArray()));
+    }
+    if (!m_radioAudio.hold(user)) {
+        *error = m_radioAudio.errorString();
+        return AudioHold::Failed;
+    }
+    return AudioHold::Held;
+}
+
+// The tuning display shows the radio's audio while it's on the screen and the
+// radio is in CW.
+void MainWindow::updateCwSpectrum()
+{
+    const bool connected = m_radio.state() == Radio::State::Connected;
+    const bool cw = connected && isCwMode(m_radio.mode());
+    if (!cw || !m_cwSpectrum->isVisible()) {
+        m_radioAudio.drop(m_cwSpectrum);
+        m_cwSpectrumFailed = false;
+        m_cwSpectrum->stop(connected && !cw ? tr("Switch to CW or CW-R to see the signal") : QString());
+        return;
+    }
+    if (m_cwSpectrumFailed || m_radioAudio.isHeldBy(m_cwSpectrum))
+        return;
+    QString error;
+    switch (holdRadioAudio(m_cwSpectrum, &error)) {
+    case AudioHold::Held:
+        m_cwSpectrum->start();
+        break;
+    case AudioHold::Asking:
+        break;
+    case AudioHold::Failed:
+        m_cwSpectrumFailed = true;
+        m_cwSpectrum->stop(error);
+        break;
+    }
 }
 
 void MainWindow::stopDeepCw()
@@ -2974,6 +3042,23 @@ void MainWindow::showAbout()
            "<p><a href=\"https://github.com/kingsqueak/590Ctrl\">github.com/kingsqueak/590Ctrl</a></p>"
            "<p><small>Built with Qt %2, running on Qt %3.</small></p></div>")
             .arg(QCoreApplication::applicationVersion(), QStringLiteral(QT_VERSION_STR), QString::fromLatin1(qVersion())));
+}
+
+// The guide to every control, in a window of its own beside the app.
+void MainWindow::showHelp()
+{
+    if (!m_help) {
+        m_help = new QTextBrowser(this);
+        m_help->setWindowFlag(Qt::Window);
+        m_help->setWindowTitle(tr("590Ctrl Help"));
+        m_help->setOpenExternalLinks(true);
+        m_help->document()->setDocumentMargin(18);
+        m_help->setSource(QUrl(QStringLiteral("qrc:/help.html")));
+        m_help->resize(680, 760);
+    }
+    m_help->show();
+    m_help->raise();
+    m_help->activateWindow();
 }
 
 void MainWindow::checkForUpdates(bool userAsked)

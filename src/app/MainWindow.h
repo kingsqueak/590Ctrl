@@ -30,6 +30,8 @@ class QLineEdit;
 class QTabWidget;
 class QPlainTextEdit;
 class QTableWidget;
+class QTextBrowser;
+class CwSpectrum;
 class EqualizerPanel;
 class FrequencyDisplay;
 class MiniWindow;
@@ -52,6 +54,7 @@ public:
     QSize tabMinimumSize(int index) const;   // for tools/ui-shots
     QWidget *miniWindow() const;             // for tools/ui-shots
     void connectSimulator();   // for tools/ui-shots
+    void showHelp();           // Help > 590Ctrl Help
 
     // The full or the mini window, whichever was in use at the last quit.
     void showStartupWindow();
@@ -108,6 +111,10 @@ private:
     void stopDeepCw();
     void failDeepCw(const QString &message);
     void showDeepCwNote();
+    // The radio's receive audio, for DeepCW and the CW tab's tuning display.
+    enum class AudioHold { Held, Asking, Failed };
+    AudioHold holdRadioAudio(const QObject *user, QString *error);
+    void updateCwSpectrum();   // runs while it shows, in CW
     void appendDecoded(const QString &text);
     void showDecoded();
     // QRZ
@@ -228,6 +235,10 @@ private:
     QPushButton *m_breakInButton = nullptr;   // VOX key, which is break-in in CW
     QSlider *m_breakInDelaySlider = nullptr;  // 50 ms steps, 0 = full break-in
     QPushButton *m_cwTuneButton = nullptr;
+    QTextBrowser *m_help = nullptr;           // Help > 590Ctrl Help, made when first opened
+    CwSpectrum *m_cwSpectrum = nullptr;       // the tuning display under it
+    bool m_cwSpectrumFailed = false;          // no audio: don't retry until the tab or the mode is left
+    bool m_askingForAudio = false;            // the microphone prompt is up
     QLineEdit *m_cwEdit = nullptr;
     QPushButton *m_cwSendButton = nullptr;
     QPushButton *m_cwStopButton = nullptr;
@@ -250,7 +261,7 @@ private:
     bool m_deepCwReady = false;
     QString m_deepCwError;
     std::unique_ptr<ts590::DeepCwDecoder> m_deepCwDecoder;
-    std::vector<float> m_deepCwMono;
+    std::vector<float> m_rxMono;            // receive audio for DeepCW and the tuning display
 
     qrz::Client m_qrz;
     std::optional<qrz::LookupResponse> m_lastLookup;

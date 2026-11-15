@@ -2,6 +2,8 @@
 
 Renders 590Ctrl's main window to PNG files, for checking layout changes without a radio:
 both arrangements (tabs below, tabs beside), each tab, with and without the tabs, dark and light.
+It also renders the CW tab's tuning display with a made-up signal (`cw-spectrum-*.png`), since the
+simulator has no audio.
 
 ```sh
 cmake --build build --target ui-shots

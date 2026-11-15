@@ -1,0 +1,331 @@
+<html>
+<head>
+<style>
+h1 { font-size: 20pt; }
+h2 { font-size: 15pt; margin-top: 22px; }
+h3 { font-size: 12pt; margin-top: 14px; }
+td, th { padding: 3px 10px 3px 0; }
+th { text-align: left; }
+</style>
+</head>
+<body>
+
+<h1>590Ctrl Help</h1>
+<p>590Ctrl controls a Kenwood TS-590SG (or TS-590S) over its USB port. Hover over any control for a
+short description of it.</p>
+
+<p>
+<a href="#connect">Connecting the radio</a> ·
+<a href="#window">The window</a> ·
+<a href="#tuning">Tuning and modes</a> ·
+<a href="#meter">Meter and antennas</a> ·
+<a href="#receive">Receive</a> ·
+<a href="#filter">Filter and notch</a> ·
+<a href="#transmit">Transmit</a> ·
+<a href="#cw">CW tab</a> ·
+<a href="#qrz">QRZ tab</a> ·
+<a href="#eq">Equalizer tab</a> ·
+<a href="#menu">Menu tab</a> ·
+<a href="#setup">Setup tab</a> ·
+<a href="#tci">Sharing the radio (TCI)</a> ·
+<a href="#mini">Mini window</a> ·
+<a href="#other">Monitor, appearance and updates</a> ·
+<a href="#keys">Keyboard shortcuts</a> ·
+<a href="#trouble">If something doesn't work</a>
+</p>
+
+<a name="connect"></a>
+<h2>Connecting the radio</h2>
+<p>Connect the radio's USB-B port to the computer. That one cable carries CAT control (a serial port)
+and the radio's audio (a sound device named "USB Audio CODEC").</p>
+<ul>
+<li><b>Port and speed:</b> open the <b>Setup</b> tab, or click the radio's name in the top line. 590Ctrl
+picks the radio's port by itself; <b>⟳</b> looks for ports again. The speed must match radio menu 068
+(USB port speed), 115200 bps from the factory.</li>
+<li><b>Connect:</b> press <b>Connect</b>. The top line shows the model and firmware once the radio
+answers.</li>
+<li><b>Power:</b> the power symbol at the top left turns the radio on and off. If the radio is off, pressing
+it wakes the radio and connects.</li>
+<li><b>No radio:</b> choose <b>Simulator (no radio)</b> as the port to try the app.</li>
+<li><b>RTS:</b> the radio only talks while RTS is asserted, so 590Ctrl holds it. If RTS is assigned to
+PTT in the radio's menus, connecting keys the transmitter.</li>
+</ul>
+<p>While connected, changes made on the radio's front panel show in the app. 590Ctrl always stops
+transmitting before it disconnects or quits.</p>
+
+<a name="window"></a>
+<h2>The window</h2>
+<p>The operating controls are always in view: the VFOs, the meter, the band and mode buttons, and the
+Receive, Filter and Transmit panels. The <b>CW</b>, <b>QRZ</b>, <b>Equalizer</b>, <b>Menu</b> and
+<b>Setup</b> tabs hold the rest.</p>
+<ul>
+<li><b>View</b> (top right) moves the tabs below the controls or beside them, in a wider and shorter
+window. <b>View → Tabs Below</b> and <b>Tabs Beside</b> do the same. The window's size is remembered for each.</li>
+<li><b>Tabs</b> hides the tabs and leaves a small operating window.</li>
+<li><b>Mini</b> shrinks the app to the <a href="#mini">mini window</a>.</li>
+<li><b>LOCK</b> and <b>FINE</b> are the radio's LOCK and FINE keys.</li>
+<li><b>Top line:</b> the radio's connection, and beside it the TCI server while it's on. Click either to
+reach its settings. A note appears here when a newer version of 590Ctrl is out.</li>
+</ul>
+
+<a name="tuning"></a>
+<h2>Tuning and modes</h2>
+<ul>
+<li><b>Tune:</b> scroll over any digit of VFO A or B to change that digit, one step for each click of the
+wheel. Double-click a VFO to type a frequency.</li>
+<li><b>A / B:</b> choose the VFO to receive and transmit on.</li>
+<li><b>SPLIT:</b> transmit on the other VFO.</li>
+<li><b>A=B:</b> copy the receive VFO's frequency and mode to the other VFO.</li>
+<li><b>RIT / XIT:</b> shift the receive or transmit frequency by the offset beside them. Turn one on to
+adjust the offset; <b>CLR</b> sets it to 0.</li>
+<li><b>Band buttons:</b> 160 m to 6 m, and <b>GEN</b> for general coverage. Click the current band again to
+step through its band memories.</li>
+<li><b>Mode buttons:</b> LSB, USB, CW, CW-R, FSK, FSK-R, FM and AM. <b>DATA</b> turns data mode on in LSB,
+USB, FM and AM.</li>
+<li><b>TX</b> lamp beside the VFOs lights while the radio transmits.</li>
+</ul>
+
+<a name="meter"></a>
+<h2>Meter and antennas</h2>
+<ul>
+<li><b>Receiving:</b> signal strength from S1 to S9 +60 dB with peak hold. The yellow marker shows the RF
+gain setting.</li>
+<li><b>SQL</b> shows in green over the reading while the squelch is set and open.</li>
+<li><b>Transmitting:</b> power in watts, with SWR, speech processor compression (COMP) and ALC below.</li>
+<li><b>ANT 1 / 2:</b> the antenna connector in use.</li>
+<li><b>RX ANT:</b> receive on the RX ANT input.</li>
+<li><b>DRV:</b> the drive output (or antenna output, as set in menu 085).</li>
+<li><b>AT:</b> puts the internal antenna tuner in line. It does not start a tune.</li>
+<li><b>AT TUNE:</b> runs a tuner cycle. The radio transmits while it tunes; click again to stop.</li>
+</ul>
+
+<a name="receive"></a>
+<h2>Receive</h2>
+<ul>
+<li><b>AF:</b> speaker volume. <b>MUTE</b> silences the speaker and the USB audio going to the computer;
+it's red while on, and the levels come back when you unmute.</li>
+<li><b>RF:</b> RF gain. <b>ATT</b> steps through attenuator, preamp and off.</li>
+<li><b>SQL:</b> squelch.</li>
+<li><b>AGC:</b> steps through off, slow and fast (not in FM). The slider is the time constant for the
+mode in use.</li>
+<li><b>NB:</b> noise blanker, stepping through off, NB1, NB2 and both. The slider is the level of the one
+that's on (not adjustable with both).</li>
+<li><b>NR:</b> noise reduction, stepping through off, NR1 and NR2 (no NR2 in FM). The slider is NR1's level or NR2's
+follow speed.</li>
+</ul>
+
+<a name="filter"></a>
+<h2>Filter and notch</h2>
+<ul>
+<li><b>A / B:</b> the radio's two IF filter settings.</li>
+<li><b>High cut and Low cut</b>, or <b>Width and Shift</b>: the filter's edges. Which pair shows depends on
+the mode, as on the radio.</li>
+<li><b>BC:</b> beat cancel, stepping through off, BC1 and BC2. BC1 removes a steady beat, BC2 several or keyed
+ones. Not in CW or FSK.</li>
+<li><b>AUTO:</b> auto notch, which finds and removes a carrier.</li>
+<li><b>MANUAL:</b> a notch at the <b>Position</b> you set. <b>WIDE</b> makes it wider.</li>
+</ul>
+
+<a name="transmit"></a>
+<h2>Transmit</h2>
+<ul>
+<li><b>Power:</b> 5 to 100 W (5 to 25 W in AM).</li>
+<li><b>Mic:</b> microphone gain for SSB and AM.</li>
+<li><b>PROC:</b> the speech processor. Click to turn it on; click again to set its input level with the slider, again
+for its output level, and again to turn it off.</li>
+<li><b>VOX:</b> voice-operated transmit, with its gain. In CW the same key is break-in.</li>
+<li><b>MON:</b> hear your own transmit audio, with its level.</li>
+<li><b>SEND:</b> transmits until you click it again.</li>
+<li><b>TX TUNE:</b> transmits a carrier at the tune power (Setup tab) until you click it again.</li>
+<li><b>TX:</b> transmits while you hold it down.</li>
+</ul>
+<p>Tune power, carrier level, VOX delay and the transmit audio filter are on the <a href="#setup">Setup
+tab</a>.</p>
+
+<a name="cw"></a>
+<h2>CW tab</h2>
+<h3>Keyer</h3>
+<ul>
+<li><b>Speed:</b> the keyer speed, 4 to 60 WPM. Keyboard CW is sent at this speed too.</li>
+<li><b>Pitch:</b> the CW pitch and sidetone, 300 to 1000 Hz.</li>
+<li><b>BREAK-IN:</b> keying transmits. The slider is how long the radio stays in transmit after the last
+element; all the way left is <b>FULL</b> break-in (QSK).</li>
+<li><b>CW TUNE:</b> the radio zeroes in on the CW signal being received. CW and CW-R only.</li>
+</ul>
+<h3>Tuning display</h3>
+<p>The display under CW TUNE shows the audio being received from 100 to 1300 Hz. Each signal is a peak.
+The red line marks the CW pitch and moves with the Pitch slider.</p>
+<ul>
+<li><b>To zero beat a station:</b> tune until its peak sits on the red line. Your transmitted signal is then
+on its frequency.</li>
+<li><b>When it runs:</b> while the CW tab is showing and the radio is in CW or CW-R.</li>
+<li><b>Audio:</b> it listens to the radio's USB audio, the same as TCI and DeepCW. See
+<a href="#trouble">If something doesn't work</a> if it stays empty.</li>
+</ul>
+<h3>Keyboard CW</h3>
+<p>Type in the line under the decoder and press Enter or <b>SEND</b>. The radio keys the text, and
+transmits it if break-in is on. Long text is fed to the radio as it goes. <b>STOP</b> stops sending and drops
+what hasn't been keyed.</p>
+<p>Letters, digits and <code>. , / ? = : ' " ( ) * + - @</code> can be sent. Prosigns:</p>
+<table>
+<tr><th>Type</th><th>Sends</th><th>Type</th><th>Sends</th></tr>
+<tr><td><code>[</code></td><td>BT</td><td><code>_</code></td><td>AR</td></tr>
+<tr><td><code>]</code></td><td>KN</td><td><code>\</code></td><td>BK</td></tr>
+<tr><td><code>&lt;</code></td><td>AS</td><td><code>#</code></td><td>HH</td></tr>
+<tr><td><code>&gt;</code></td><td>SK</td><td><code>%</code></td><td>SN</td></tr>
+</table>
+<h3>Decoder</h3>
+<p><b>DECODE</b> prints the Morse being received, in CW and CW-R. There are two decoders:</p>
+<ul>
+<li><b>Radio:</b> the TS-590SG's own decoder. It prints at once and is best on clean signals.
+<b>Threshold</b> sets how strong a signal must be: raise it if noise prints as characters.</li>
+<li><b>DeepCW:</b> a neural network that listens to the radio's USB audio. It copies weak, fading and
+hand-sent CW far better, 2 to 4 seconds behind the signal. It needs a pitch of 400 Hz or more. The note
+beside the buttons shows what it's doing.</li>
+<li><b>WORDS:</b> puts back the word spaces a decoder misses, so CQSSK1XMK1XM reads CQ SS K1XM K1XM.
+It works with either decoder.</li>
+<li><b>Clear</b> empties the text.</li>
+</ul>
+<p>DeepCW is in the macOS app on Apple silicon Macs. Where it isn't available the Radio and DeepCW choice
+doesn't appear. The TS-590S has no decoder of its own, so on it DeepCW is the only one.</p>
+
+<a name="qrz"></a>
+<h2>QRZ tab</h2>
+<ul>
+<li><b>Account…:</b> your QRZ username and password, your station callsign, and your Logbook API key
+(QRZ Logbook → Settings → API). The key is only needed for logging. A remembered password is kept
+unencrypted in the app's settings.</li>
+<li><b>Look Up:</b> type a callsign and press Enter. Every field QRZ returns is listed, with the operator's
+photo. Double-click the callsign, web page, email or image to open it. Without a QRZ subscription, QRZ
+returns only part of each record.</li>
+<li><b>Worked before:</b> with a Logbook API key, a call you've worked turns green, with the date, time, band
+and mode of the last QSO and how many you've logged.</li>
+<li><b>Log Contact:</b> adds the QSO to your QRZ Logbook. The frequency, band, mode and power come from the
+radio and the time is the current UTC time. Set the RST and a comment beside it. Logging through the API
+needs a QRZ subscription.</li>
+<li><b>Mode to log:</b> follows the radio. In SSB-DATA it's a guess (PSK31), so pick FT8, FT4, RTTY or whatever you're
+using.</li>
+</ul>
+
+<a name="eq"></a>
+<h2>Equalizer tab</h2>
+<p>The <b>RX Equalizer</b> and <b>TX Equalizer</b> each have 18 bands.</p>
+<ul>
+<li><b>Curve:</b> the radio's EQ curve for the current kind of mode (SSB, SSB-DATA, CW, FM, FM-DATA, AM,
+AM-DATA or FSK). <b>U</b> is the User curve, the one whose band levels the radio keeps.</li>
+<li><b>Sliders:</b> the level of each band. They can't be changed while the curve is OFF.</li>
+<li><b>Flat</b> sets every band to 0 dB. <b>Reload</b> reads the curve back from the radio.</li>
+<li><b>Presets:</b> <b>Save As…</b> stores the levels under a name, <b>Apply</b> writes the chosen preset to the
+radio, <b>Delete</b> removes it, and <b>More</b> imports and exports presets as files.</li>
+<li><b>Auto-load into U:</b> the radio has one User curve for receive and one for transmit, shared by every
+mode. Link a preset to the current kind of mode here, and 590Ctrl writes it into the User curve each time
+you enter that mode, so each mode gets its own curve.</li>
+</ul>
+<p>The transmit equalizer is always off in CW and FSK.</p>
+
+<a name="menu"></a>
+<h2>Menu tab</h2>
+<p>Every setting in the radio's menu, for both of its menu sets, <b>Menu A</b> and <b>Menu B</b>, side by
+side. Both are read the first time you open the tab, which takes a few seconds.</p>
+<ul>
+<li><b>Change a setting:</b> pick from the list, or type the number or text, in the A or B column. Rows where
+A and B differ are in bold.</li>
+<li><b>Menu in use: A / B</b> switches the radio between its two sets. Every menu setting changes with it.</li>
+<li><b>Copy A → B</b> and <b>Copy B → A</b> write one set into the other, after showing how many settings will
+change.</li>
+<li><b>Filter by number or name:</b> type a menu number or part of a name to find a setting.</li>
+<li><b>Reload</b> reads both sets again.</li>
+</ul>
+<p>PF and key assignments are function numbers from the radio's instruction manual (255 is OFF). The COM
+and USB port speeds are shown but can't be changed here, since that would drop the connection.</p>
+
+<a name="setup"></a>
+<h2>Setup tab</h2>
+<ul>
+<li><b>Radio connection:</b> the port, the speed and <b>Connect</b>. See <a href="#connect">Connecting the
+radio</a>.</li>
+<li><b>Programs sharing the radio (TCI):</b> <b>Settings…</b> opens the <a href="#tci">TCI server</a>
+settings.</li>
+<li><b>Computer audio:</b> the USB audio levels. <b>USB in</b> (menu 071) is audio from the computer to the
+transmitter; <b>USB out</b> (menu 072) is received audio to the computer.</li>
+<li><b>Transmit set-up:</b> <b>Tune power</b> for TX TUNE, <b>Carrier</b> level for CW, FSK and AM, and <b>VOX
+delay</b>.</li>
+<li><b>Transmit audio filter:</b> the low and high cut of the transmit audio, for SSB and AM and for SSB-DATA.</li>
+</ul>
+
+<a name="tci"></a>
+<h2>Sharing the radio (TCI)</h2>
+<p>TCI lets programs such as WSJT-X, fldigi and TCIdigi use the radio while 590Ctrl is connected to it, so
+they share it. Open <b>Tools → TCI Server…</b>, or <b>Settings…</b> on the Setup tab.</p>
+<ul>
+<li><b>Let TCI programs control the radio</b> turns the server on.</li>
+<li><b>Address:</b> 127.0.0.1 keeps it to this computer. 0.0.0.0 also accepts programs on other computers on
+your network. TCI has no password, so anyone who can reach it can tune and key the radio.</li>
+<li><b>Port:</b> 40001 unless you change it.</li>
+<li><b>Share the radio's USB audio:</b> sends received audio to the programs and plays their transmit audio into
+the radio, so they need no sound device of their own. Leave it off if the program uses the USB Audio CODEC
+itself.</li>
+<li><b>Receive audio from / Transmit audio to:</b> the sound devices to use, normally the radio's.</li>
+</ul>
+<p>In the program, choose TCI and enter the same address and port. In WSJT-X: Settings → Radio, rig
+<b>TCI Client RX1</b>, PTT method <b>CAT</b>; and under Settings → Audio choose <b>TCI audio</b> for both to
+use the shared audio.</p>
+<p>590Ctrl must be connected to the radio; until it is, the programs are told the radio is off. A program
+that disconnects while transmitting unkeys the radio.</p>
+
+<a name="mini"></a>
+<h2>Mini window</h2>
+<p><b>Mini</b> at the top right, or <b>View → Mini Window</b>, swaps the app for a small window to park in a
+corner of the screen: VFO A and B, <b>A</b>, <b>B</b> and <b>A=B</b>, the meter, <b>MUT</b> and a large
+hold-to-transmit <b>TX</b>.</p>
+<ul>
+<li>Drag its edge to resize it; everything scales with it.</li>
+<li>It stays on top of other apps. 📌 turns that off.</li>
+<li>⤢, or closing it, brings back the full window.</li>
+</ul>
+
+<a name="other"></a>
+<h2>Monitor, appearance and updates</h2>
+<ul>
+<li><b>View → CAT Monitor</b> shows the commands going to and from the radio and TCI programs. <b>Hide meter
+polling</b> leaves out the constant meter readings.</li>
+<li><b>View → Appearance:</b> System, Light or Dark.</li>
+<li><b>Updates:</b> at start 590Ctrl asks GitHub whether there's a newer release and shows a note in the top
+line if so. Click the note to open the download page; ✕ hides it until the next version. <b>Check for
+Updates…</b> asks now. Nothing is downloaded or installed for you.</li>
+</ul>
+
+<a name="keys"></a>
+<h2>Keyboard shortcuts</h2>
+<table>
+<tr><th>macOS</th><th>Linux and Windows</th><th></th></tr>
+<tr><td>⌘⇧M</td><td>Ctrl+Shift+M</td><td>Mini window, and back</td></tr>
+<tr><td>⌘⇧T</td><td>Ctrl+Shift+T</td><td>Show or hide the tabs</td></tr>
+<tr><td>⌘?</td><td>F1</td><td>This help</td></tr>
+<tr><td>Enter</td><td>Enter</td><td>In the CW line: send. In the QRZ callsign: look up</td></tr>
+</table>
+
+<a name="trouble"></a>
+<h2>If something doesn't work</h2>
+<ul>
+<li><b>It won't connect:</b> check the speed against radio menu 068. On macOS choose
+<code>cu.SLAB_USBtoUART</code>. On Linux your account must be in the <code>dialout</code> group
+(<code>uucp</code> on Arch); log in again after adding it. On Windows the radio needs the Silicon Labs CP210x
+driver.</li>
+<li><b>The tuning display or DeepCW shows nothing on macOS:</b> they hear the radio through what macOS calls a
+microphone. Allow 590Ctrl in System Settings → Privacy &amp; Security → Microphone, then leave the CW tab and
+come back, or press DECODE again.</li>
+<li><b>"The radio's USB audio device wasn't found":</b> the computer doesn't see the "USB Audio CODEC". Check
+the USB cable, or choose the devices in the TCI settings.</li>
+<li><b>The tuning display is flat:</b> raise <b>USB out</b> under Computer audio on the Setup tab, and check
+MUTE is off.</li>
+<li><b>DeepCW prints nothing:</b> set the pitch to 400 Hz or more, and give it a few seconds.</li>
+<li><b>A TCI program says the radio is off:</b> connect 590Ctrl to the radio first.</li>
+<li><b>A control is greyed out:</b> the radio doesn't offer it in the current mode, or isn't connected.</li>
+</ul>
+
+<p>More, including how to build 590Ctrl, is at
+<a href="https://github.com/kingsqueak/590Ctrl">github.com/kingsqueak/590Ctrl</a>.</p>
+
+</body>
+</html>

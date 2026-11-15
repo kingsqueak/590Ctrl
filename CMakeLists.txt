@@ -33,6 +33,7 @@ qt_add_library(ts590core STATIC
     src/core/UpdateChecker.h src/core/UpdateChecker.cpp
     src/core/CwWordFormer.h src/core/CwWordFormer.cpp
     src/core/DeepCwDecoder.h src/core/DeepCwDecoder.cpp
+    src/core/AudioSpectrum.h src/core/AudioSpectrum.cpp
 )
 # The words the CW word former may split run-together copy into.
 qt_add_resources(ts590core "cwwords" PREFIX "/" BASE resources FILES resources/cw-words.txt)
@@ -73,6 +74,7 @@ set(APP_SOURCES
     src/app/SMeter.h src/app/SMeter.cpp
     src/app/MiniWindow.h src/app/MiniWindow.cpp
     src/app/PowerButton.h src/app/PowerButton.cpp
+    src/app/CwSpectrum.h src/app/CwSpectrum.cpp
     src/app/AppStyle.h src/app/AppStyle.cpp
 )
 qt_add_executable(590Ctrl
@@ -83,6 +85,8 @@ qt_add_executable(590Ctrl
 # Dock/Finder icon on macOS; the PNG is the window icon elsewhere.
 set_source_files_properties(resources/590Ctrl.icns PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
 qt_add_resources(590Ctrl "icon" PREFIX "/" FILES resources/590Ctrl.png)
+# Help > 590Ctrl Help.
+qt_add_resources(590Ctrl "help" PREFIX "/" BASE resources FILES resources/help.html)
 # The .exe's own icon on Windows. (resources/590Ctrl.* are made by scripts/make-icon.py.)
 if(WIN32)
     target_sources(590Ctrl PRIVATE resources/590Ctrl.rc)
@@ -116,7 +120,7 @@ install(SCRIPT ${deploy_script})
 
 if(BUILD_TESTING)
     set(TESTS tst_catcodec tst_catlink tst_radio tst_eqpresets tst_qrz tst_tciserver tst_resampler tst_updatechecker
-        tst_cwwordformer)
+        tst_cwwordformer tst_audiospectrum)
     if(DEEPCW)
         list(APPEND TESTS tst_deepcw)
     endif()
@@ -143,4 +147,5 @@ if(BUILD_TESTING)
     target_include_directories(ui-shots PRIVATE src/app)
     target_link_libraries(ui-shots PRIVATE ts590core Qt6::Widgets Qt6::Multimedia)
     target_compile_definitions(ui-shots PRIVATE PROJECT_VERSION="${PROJECT_VERSION}")
+    qt_add_resources(ui-shots "help" PREFIX "/" BASE resources FILES resources/help.html)
 endif()

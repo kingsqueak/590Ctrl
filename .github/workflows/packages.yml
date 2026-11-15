@@ -3,6 +3,9 @@ name: Packages
 # Builds the universal macOS DMG, deb, RPM and Arch packages for x86-64 and arm64,
 # and the Windows zip.
 # Runs on a version tag (v*) or by hand; the packages are the run's artifacts.
+# Every package carries the DeepCW decoder (its model and ONNX Runtime): macOS,
+# Linux and Windows. Each package script fetches ONNX Runtime and fails if the
+# model or the library is missing from what it built; keep it that way.
 on:
   push:
     tags: ['v*']

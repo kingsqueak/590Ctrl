@@ -27,8 +27,16 @@ public:
     explicit RadioAudio(QObject *parent = nullptr);
     ~RadioAudio() override;
 
-    // The device with this id, or with an empty id the radio's codec
-    // ("USB Audio CODEC"). Null if there's no such device.
+    // Whether a device description is the radio's codec. macOS shows the bare
+    // "USB Audio CODEC"; Windows wraps it ("Microphone (2- USB Audio CODEC)")
+    // and Linux names the chip ("PCM2903B Audio CODEC Analog Stereo").
+    static bool isCodecName(const QString &description);
+    // Which of these device descriptions is the radio, or -1. A codec name
+    // wins; failing that, a TS-590S on Windows is a plain "USB Audio Device"
+    // ("Speakers (2- USB Audio Device)"), taken only if it's the only one.
+    static int pickCodec(const QStringList &descriptions);
+    // The device with this id, or with an empty id the radio's codec.
+    // Null if there's no such device.
     static QAudioDevice findInput(const QByteArray &id = {});
     static QAudioDevice findOutput(const QByteArray &id = {});
 

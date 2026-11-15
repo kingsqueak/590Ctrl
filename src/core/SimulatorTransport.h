@@ -28,6 +28,10 @@ public:
     QString description() const override;
 
     // Test hooks.
+    // Which radio to be (ID) and its firmware (FV); call before connecting.
+    // A TS-590S keeps its EQ curve in menus 030/031 and, before firmware
+    // 2.00, has no EQ command.
+    void setModel(int modelId, const QByteArray &firmware);
     QByteArrayList received() const { return m_received; }
     // Menu values in the selected menu set, or in a given one.
     int menu(int number) const { return menus().value(number); }
@@ -97,6 +101,12 @@ private:
     FilterLayout currentFilters() const;
     bool busy() const;
 
+    void seedMenus();
+    // The EQ type a menu number holds the curve of, on a TS-590S.
+    std::optional<EqType> eqMenuType(int number) const;
+
+    int m_modelId = kModelTs590SG;
+    QByteArray m_firmwareVersion = "1.07";
     bool m_open = false;
     bool m_unresponsive = false;
     QByteArray m_input;

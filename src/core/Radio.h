@@ -395,6 +395,8 @@ private:
     FilterSlot m_filterSlot = FilterSlot::A;
     bool m_ssbWidthShift = false;       // EX028
     bool m_ssbDataWidthShift = false;   // EX029
+    bool m_eqByMenu = false;            // TS-590S before firmware 2.00: no EQ command
+    void useEqMenus();
     std::optional<int> m_sh, m_sl, m_fw, m_is;
 
     std::optional<MenuBank> m_menuBank;    // the set in use

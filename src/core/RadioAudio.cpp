@@ -20,8 +20,15 @@ constexpr int kOutputBufferMs = 60;
 
 QAudioDevice findDevice(const QList<QAudioDevice> &devices, const QByteArray &id)
 {
+    if (id.isEmpty()) {
+        QStringList descriptions;
+        for (const QAudioDevice &device : devices)
+            descriptions.append(device.description());
+        const int index = RadioAudio::pickCodec(descriptions);
+        return index >= 0 ? devices[index] : QAudioDevice();
+    }
     for (const QAudioDevice &device : devices) {
-        if (id.isEmpty() ? device.description() == kCodecName : device.id() == id)
+        if (device.id() == id)
             return device;
     }
     return {};
@@ -58,6 +65,26 @@ RadioAudio::RadioAudio(QObject *parent)
 RadioAudio::~RadioAudio()
 {
     stop();
+}
+
+bool RadioAudio::isCodecName(const QString &description)
+{
+    return description.simplified().contains(QLatin1String("Audio CODEC"), Qt::CaseInsensitive);
+}
+
+int RadioAudio::pickCodec(const QStringList &descriptions)
+{
+    int generic = -1;
+    int generics = 0;
+    for (int i = 0; i < descriptions.size(); ++i) {
+        if (isCodecName(descriptions[i]))
+            return i;
+        if (descriptions[i].simplified().contains(QLatin1String("USB Audio Device"), Qt::CaseInsensitive)) {
+            generic = i;
+            ++generics;
+        }
+    }
+    return generics == 1 ? generic : -1;
 }
 
 QAudioDevice RadioAudio::findInput(const QByteArray &id) { return findDevice(QMediaDevices::audioInputs(), id); }
@@ -103,7 +130,9 @@ bool RadioAudio::start()
     if (isRunning())
         return true;
     if (m_inputDevice.isNull() || m_outputDevice.isNull()) {
-        m_error = tr("The radio's USB audio device (%1) wasn't found.").arg(kCodecName);
+        m_error = tr("The radio's USB audio device wasn't found by name (%1, or a single USB Audio Device). "
+                     "Choose it under Tools → TCI Server.")
+                      .arg(kCodecName);
         return false;
     }
     m_inputFormat = formatFor(m_inputDevice);

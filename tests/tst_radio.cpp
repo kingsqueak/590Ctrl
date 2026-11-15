@@ -885,6 +885,62 @@ private slots:
         QTRY_COMPARE(sim->eqLevels(EqType::Tx), levels);
     }
 
+    // A TS-590S before firmware 2.00 has no EQ command: the curve is menus
+    // 030 (TX) and 031 (RX), the levels are UR/UT as on any other.
+    void oldTs590sUsesTheEqMenus()
+    {
+        Radio radio;
+        QSignalSpy messages(&radio, &Radio::message);
+        auto transport = std::make_unique<SimulatorTransport>();
+        SimulatorTransport *sim = transport.get();
+        sim->setModel(kModelTs590S, "1.06");
+        radio.connectTransport(std::move(transport));
+        radio.setMeterPolling(false);
+        settle(radio);
+        QCOMPARE(radio.modelId(), kModelTs590S);
+        QCOMPARE(radio.eqCurve(EqType::Rx), EqCurve::Off);
+        QVERIFY(radio.eqLevels(EqType::Tx));
+        QCOMPARE(messages.size(), 1);   // the note about the menus, and no rejections
+        for (const QByteArray &command : sim->received())
+            QVERIFY2(!command.startsWith("EQ") && !command.startsWith("TP") && !command.startsWith("CD"), command);
+
+        radio.setEqCurve(EqType::Tx, EqCurve::User);
+        QTRY_COMPARE(sim->eqCurve(EqType::Tx, EqMode::Ssb), EqCurve::User);
+        QTRY_COMPARE(radio.eqCurve(EqType::Tx), EqCurve::User);
+        QVERIFY(sim->received().contains("EX03000007"));
+        EqLevels levels = flatEqLevels();
+        levels[3] = 2;
+        radio.setEqLevels(EqType::Tx, levels);
+        QTRY_COMPARE(sim->eqLevels(EqType::Tx), levels);
+
+        // The curve is per mode: the menu is read again after a mode change.
+        radio.setMode(Mode::AM);
+        QTRY_COMPARE(radio.eqCurve(EqType::Tx), EqCurve::Off);
+        QTRY_COMPARE(radio.link()->pendingCount(), 0);
+        QCOMPARE(messages.size(), 1);
+    }
+
+    // From firmware 2.00 a TS-590S has the EQ command, like the SG.
+    void newerTs590sUsesTheEqCommand()
+    {
+        QVERIFY(eqCommandSupported(kModelTs590S, QStringLiteral("2.05")));
+        QVERIFY(eqCommandSupported(kModelTs590S, QString()));
+        QVERIFY(!eqCommandSupported(kModelTs590S, QStringLiteral("1.08")));
+        QVERIFY(eqCommandSupported(kModelTs590SG, QStringLiteral("1.07")));
+
+        Radio radio;
+        auto transport = std::make_unique<SimulatorTransport>();
+        SimulatorTransport *sim = transport.get();
+        sim->setModel(kModelTs590S, "2.05");
+        radio.connectTransport(std::move(transport));
+        radio.setMeterPolling(false);
+        settle(radio);
+        QVERIFY(sim->received().contains("EQ00"));   // newer firmware: the EQ command
+        radio.setEqCurve(EqType::Rx, EqCurve::Flat);
+        QTRY_COMPARE(radio.eqCurve(EqType::Rx), EqCurve::Flat);
+        QVERIFY(sim->received().contains("EQ106"));
+    }
+
     void reportsSilentRadio()
     {
         Radio radio;

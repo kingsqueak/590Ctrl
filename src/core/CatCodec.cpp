@@ -81,9 +81,18 @@ MenuNumbers menuNumbersFor(int modelId)
 {
     if (modelId == kModelTs590S) {
         // The S has no HI/LO vs WIDTH/SHIFT menus (SSB is always HI/LO).
-        return {-1, -1, 64, 65, 48, {25, 26, 27, 28}, 34};
+        return {-1, -1, 64, 65, 48, {25, 26, 27, 28}, 34, 30, 31};
     }
-    return {28, 29, 71, 72, 54, {31, 32, 33, 34}, 40};
+    return {28, 29, 71, 72, 54, {31, 32, 33, 34}, 40, 36, 37};
+}
+
+bool eqCommandSupported(int modelId, const QString &firmware)
+{
+    if (modelId != kModelTs590S)
+        return true;
+    bool ok = false;
+    const double version = firmware.toDouble(&ok);
+    return !ok || version >= 2.0;
 }
 
 const QList<int> &txFilterValuesHz(TxFilter filter)

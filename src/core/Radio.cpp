@@ -221,6 +221,7 @@ void Radio::resetRadioState()
     m_rxTuner = m_txTuner = m_tunerTuning = false;
     m_modelId = 0;
     m_firmware.clear();
+    m_eqByMenu = false;
     m_mode = Mode::None;
     m_data = false;
     m_transmitting = false;
@@ -345,10 +346,27 @@ void Radio::requestFilterValues()
 
 void Radio::refreshEq()
 {
+    const MenuNumbers menus = menuNumbersFor(m_modelId);
     for (EqType type : {EqType::Tx, EqType::Rx}) {
-        m_link.query(cmd::readEqCurve(type, eqMode()));
+        if (m_eqByMenu)
+            m_link.query(cmd::readMenu(type == EqType::Tx ? menus.txEq : menus.rxEq));
+        else
+            m_link.query(cmd::readEqCurve(type, eqMode()));
         m_link.query(cmd::readEqLevels(type));
     }
+}
+
+void Radio::useEqMenus()
+{
+    if (m_eqByMenu)
+        return;
+    m_eqByMenu = true;
+    const MenuNumbers menus = menuNumbersFor(m_modelId);
+    emit message(tr("This TS-590S's firmware (%1) has no EQ command (it came with 2.00); the EQ curve is set "
+                    "through menus %2 and %3 instead.")
+                     .arg(m_firmware)
+                     .arg(menus.txEq, 3, 10, QLatin1Char('0'))
+                     .arg(menus.rxEq, 3, 10, QLatin1Char('0')));
 }
 
 void Radio::refreshEqLevels(EqType type)
@@ -411,9 +429,7 @@ void Radio::handleFrame(const QByteArray &frame)
             return;
         m_awaitingIdentity = false;
         m_bootTimer.stop();
-        if (m_modelId == kModelTs590S)
-            emit message(tr("This is a TS-590S. 590Ctrl targets the TS-590SG; some filter tables differ."));
-        else if (m_modelId != kModelTs590SG)
+        if (m_modelId != kModelTs590S && m_modelId != kModelTs590SG)
             emit message(tr("Unexpected radio ID %1; continuing anyway.").arg(m_modelId));
         // The S has no menu for it: SSB is HI/LO, SSB-DATA is WIDTH/SHIFT.
         m_ssbWidthShift = false;
@@ -423,6 +439,8 @@ void Radio::handleFrame(const QByteArray &frame)
         m_meterTimer.start();
     } else if (name == "FV") {
         m_firmware = QString::fromLatin1(frame.sliced(2));
+        if (!eqCommandSupported(m_modelId, m_firmware))
+            useEqMenus();
         emit identified(m_modelId, m_firmware);
     } else if (name == "AI") {
         if (!m_originalAutoInfo)
@@ -750,6 +768,18 @@ void Radio::handleFrame(const QByteArray &frame)
                 field = int(*value);
                 emit txFilterChanged(filter);
             }
+        } else if (m_eqByMenu && (menu->number == menus.txEq || menu->number == menus.rxEq)) {
+            // The menu holds the curve of the mode in use.
+            const EqType type = menu->number == menus.txEq ? EqType::Tx : EqType::Rx;
+            if (*value < 0 || *value > int(EqCurve::User))
+                return;
+            auto &field = m_eqCurves[int(type)][int(eqMode())];
+            if (field != EqCurve(*value)) {
+                field = EqCurve(*value);
+                emit eqCurveChanged(type);
+                // Changed at the panel or in the menu editor: the levels follow.
+                m_link.query(cmd::readEqLevels(type));
+            }
         } else if (menu->number == menus.cwPitch) {
             if (m_cwPitch != int(*value)) {
                 m_cwPitch = int(*value);
@@ -835,6 +865,9 @@ void Radio::handleRejected(const QByteArray &command, char code)
     if (command == "GC;" || command == "GT;" || command == "BC;" || command == "CA;" || command == "BY;"
         || command == "CD0;" || command == "CD1;")
         return;
+    // A TS-590S only has MU from firmware 2.04.
+    if (command == "MU;" && m_modelId == kModelTs590S)
+        return;
     if (command == "KY;") {
         m_cwAwaitingBuffer = false;
         m_cwTimer.start();
@@ -854,6 +887,17 @@ void Radio::handleRejected(const QByteArray &command, char code)
     if (command == cmd::startTuning()) {
         emit message(tr("The radio refused to start tuning (the tuner may not cover this band)."));
         m_link.query("AC;");
+        return;
+    }
+    if (command.startsWith("EQ") && command.size() == 5) {
+        // A read. An older TS-590S doesn't know the command at all; asking
+        // again would only be refused again.
+        if (m_modelId == kModelTs590S && !m_eqByMenu) {
+            useEqMenus();
+            refreshEq();
+        } else {
+            emit message(tr("The radio doesn't answer the EQ command (%1).").arg(QString::fromLatin1(command)));
+        }
         return;
     }
     if (command.startsWith("EQ")) {
@@ -1531,6 +1575,14 @@ void Radio::setEqCurve(EqType type, EqCurve curve)
     const EqMode mode = eqMode();
     if (!eqCurveSelectable(type, mode)) {
         emit message(tr("TX EQ is fixed OFF in %1.").arg(eqModeName(mode)));
+        return;
+    }
+    if (m_eqByMenu) {
+        const MenuNumbers menus = menuNumbersFor(m_modelId);
+        const int menu = type == EqType::Tx ? menus.txEq : menus.rxEq;
+        m_link.send(cmd::setMenu(menu, QByteArray::number(int(curve))), cmd::readMenu(menu).chopped(1));
+        m_link.query(cmd::readMenu(menu));
+        m_link.query(cmd::readEqLevels(type));
         return;
     }
     const QByteArray command = cmd::eqCurve(type, mode, curve);

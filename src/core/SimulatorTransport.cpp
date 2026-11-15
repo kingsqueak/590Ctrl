@@ -30,7 +30,42 @@ SimulatorTransport::SimulatorTransport(QObject *parent)
     m_eqLevels[int(EqType::Tx)] = flatEqLevels();
     m_eqCurves[int(EqType::Rx)][int(EqMode::SsbData)] = EqCurve::User;
     m_eqCurves[int(EqType::Tx)][int(EqMode::SsbData)] = EqCurve::User;
-    const MenuNumbers numbers = menuNumbersFor(kModelTs590SG);
+    seedMenus();
+
+    m_decoderTimer.setInterval(150);
+    connect(&m_decoderTimer, &QTimer::timeout, this, [this] {
+        static const QByteArray text = "CQ CQ CQ DE KC2RGW KC2RGW K   ";
+        if (!m_decoder || !isCwMode(m_mode))
+            return;
+        const char c = text[m_decoderPos++ % text.size()];
+        echo("CD2" + QByteArray(1, c) + ' ');
+    });
+}
+
+void SimulatorTransport::setModel(int modelId, const QByteArray &firmware)
+{
+    m_modelId = modelId;
+    m_firmwareVersion = firmware;
+    seedMenus();
+}
+
+std::optional<EqType> SimulatorTransport::eqMenuType(int number) const
+{
+    if (m_modelId != kModelTs590S)
+        return std::nullopt;
+    const MenuNumbers numbers = menuNumbersFor(m_modelId);
+    if (number == numbers.txEq)
+        return EqType::Tx;
+    if (number == numbers.rxEq)
+        return EqType::Rx;
+    return std::nullopt;
+}
+
+void SimulatorTransport::seedMenus()
+{
+    m_menuSets[0].clear();
+    m_menuBank = MenuBank::A;
+    const MenuNumbers numbers = menuNumbersFor(m_modelId);
     menus()[numbers.usbAudioIn] = 4;
     menus()[numbers.usbAudioOut] = 5;
     menus()[numbers.powerFine] = 0;
@@ -41,15 +76,6 @@ SimulatorTransport::SimulatorTransport(QObject *parent)
     menus()[numbers.txFilter[3]] = 4;
     menus()[numbers.cwPitch] = 6;   // 600 Hz
     m_menuSets[int(MenuBank::B)] = m_menuSets[int(MenuBank::A)];
-
-    m_decoderTimer.setInterval(150);
-    connect(&m_decoderTimer, &QTimer::timeout, this, [this] {
-        static const QByteArray text = "CQ CQ CQ DE KC2RGW KC2RGW K   ";
-        if (!m_decoder || !isCwMode(m_mode))
-            return;
-        const char c = text[m_decoderPos++ % text.size()];
-        echo("CD2" + QByteArray(1, c) + ' ');
-    });
 }
 
 bool SimulatorTransport::open()
@@ -75,7 +101,7 @@ QString SimulatorTransport::errorString() const
 
 QString SimulatorTransport::description() const
 {
-    return QStringLiteral("Simulated TS-590SG");
+    return m_modelId == kModelTs590S ? QStringLiteral("Simulated TS-590S") : QStringLiteral("Simulated TS-590SG");
 }
 
 void SimulatorTransport::write(const QByteArray &data)
@@ -289,9 +315,14 @@ void SimulatorTransport::handle(const QByteArray &command)
     if (!m_powered)
         return;   // switched off: only PS works
     if (name == "ID" && isRead)
-        return reply("ID023");
+        return reply("ID" + digits(m_modelId, 3));
     if (name == "FV" && isRead)
-        return reply("FV1.07");
+        return reply("FV" + m_firmwareVersion);
+    // What a TS-590S lacks: TP and CD altogether, EQ before firmware 2.00.
+    if (m_modelId == kModelTs590S
+        && (name == "TP" || name == "CD"
+            || (name == "EQ" && !eqCommandSupported(m_modelId, QString::fromLatin1(m_firmwareVersion)))))
+        return reply("?");
     if (name == "AI") {
         if (isRead)
             return reply("AI" + QByteArray::number(m_autoInfo));
@@ -695,6 +726,17 @@ void SimulatorTransport::handle(const QByteArray &command)
         const auto answer = parseMenu(command);
         if (!answer)
             return reply("?");
+        if (const auto type = eqMenuType(answer->number)) {
+            EqCurve &curve = m_eqCurves[int(*type)][int(currentEqMode())];
+            if (answer->value.isEmpty())
+                return reply(command + QByteArray::number(int(curve)));
+            const int value = number(answer->value).value_or(-1);
+            if (value < 0 || value > int(EqCurve::User)
+                || (value != 0 && !eqCurveSelectable(*type, currentEqMode())))
+                return reply("?");
+            curve = EqCurve(value);
+            return echo(command);
+        }
         if (answer->value.isEmpty())
             return reply(command + QByteArray::number(menus().value(answer->number)));
         menus()[answer->number] = number(answer->value).value_or(0);

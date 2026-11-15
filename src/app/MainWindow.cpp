@@ -2753,7 +2753,7 @@ void MainWindow::editTciServer()
     // First entry: find the radio's codec by name, wherever it's plugged in.
     auto deviceCombo = [&](const QList<QAudioDevice> &devices, const QString &key) {
         auto *combo = new QComboBox;
-        combo->addItem(tr("USB Audio CODEC (the radio)"), QByteArray());
+        combo->addItem(tr("Automatic (the radio's USB audio)"), QByteArray());
         for (const QAudioDevice &device : devices)
             combo->addItem(device.description(), device.id());
         const int index = combo->findData(settings.value(key).toByteArray());

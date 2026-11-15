@@ -59,8 +59,13 @@ struct MenuNumbers {
     // Transmit filter menus, indexed by TxFilter.
     std::array<int, 4> txFilter = {-1, -1, -1, -1};
     int cwPitch = -1;             // CW pitch / sidetone, 0..14 (two-digit value)
+    int txEq = -1;                // equalizer curve for the mode in use, as EqCurve
+    int rxEq = -1;
 };
 MenuNumbers menuNumbersFor(int modelId);
+// The EQ command came to the TS-590S with firmware 2.00; before that the
+// curve is only in the menu (txEq/rxEq). An unknown firmware counts as new.
+bool eqCommandSupported(int modelId, const QString &firmware);
 constexpr int kUsbAudioLevelMax = 9;
 
 // RIT/XIT offset range (RU/RD) and TX power limits (PC/TP).

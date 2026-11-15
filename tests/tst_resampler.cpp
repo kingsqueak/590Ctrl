@@ -1,3 +1,4 @@
+#include "RadioAudio.h"
 #include "Resampler.h"
 
 #include <QTest>
@@ -83,6 +84,24 @@ private slots:
         for (qsizetype i = 0; i < in.size(); i += 333)
             got.append(pieces.process(in.constData() + i, std::min<qsizetype>(333, in.size() - i)));
         QCOMPARE(got, expected);
+    }
+
+    void recognisesTheRadiosCodec()
+    {
+        QVERIFY(RadioAudio::isCodecName(QStringLiteral("USB Audio CODEC")));                      // macOS
+        QVERIFY(RadioAudio::isCodecName(QStringLiteral("Microphone (2- USB Audio CODEC )")));     // Windows
+        QVERIFY(RadioAudio::isCodecName(QStringLiteral("Speakers (USB AUDIO  CODEC)")));
+        QVERIFY(RadioAudio::isCodecName(QStringLiteral("PCM2903B Audio CODEC Analog Stereo")));   // Linux
+        QVERIFY(!RadioAudio::isCodecName(QStringLiteral("MacBook Pro Microphone")));
+        QVERIFY(!RadioAudio::isCodecName(QStringLiteral("Realtek High Definition Audio")));
+
+        // A TS-590S on Windows: a plain USB Audio Device, used when it's the only one.
+        const QString realtek = QStringLiteral("Speakers (Realtek(R) Audio)");
+        const QString plain = QStringLiteral("Speakers (2- USB Audio Device)");
+        QCOMPARE(RadioAudio::pickCodec({realtek, plain}), 1);
+        QCOMPARE(RadioAudio::pickCodec({plain, QStringLiteral("Speakers (USB Audio CODEC)")}), 1);
+        QCOMPARE(RadioAudio::pickCodec({plain, realtek, QStringLiteral("Headset (USB Audio Device)")}), -1);
+        QCOMPARE(RadioAudio::pickCodec({realtek}), -1);
     }
 };
 

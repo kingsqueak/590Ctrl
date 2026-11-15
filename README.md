@@ -5,9 +5,9 @@
 A desktop control panel for the **Kenwood TS-590SG** over its USB port, for
 macOS, Linux and Windows. Written in C++20 with Qt 6.
 
-The earlier **TS-590S** works too since 0.17.2, as far as its command set goes:
-it has no TX tune power and no Morse decoder of its own (DeepCW decodes
-instead), and before firmware 2.00 its EQ curve is set through menus 030 and 031.
+The earlier **TS-590S** is supported since 0.17.2 and needs firmware 2.00 or
+newer. It has no TX tune power and no Morse decoder of its own, so DeepCW
+does the decoding.
 
 ![590Ctrl with the tabs below the operating controls](docs/main-0.17.png)
 

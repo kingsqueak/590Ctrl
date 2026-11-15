@@ -13,6 +13,7 @@ VERSION=$(sed -n 's/^project(590Ctrl VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
 ARCH=$(uname -m)
 [ -n "$VERSION" ] || { echo "Could not read the project version" >&2; exit 1; }
 
+./scripts/fetch-onnxruntime.sh   # for the DeepCW decoder
 cmake -S . -B build-linux -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF \
       -DCMAKE_PREFIX_PATH="$QT" -DCMAKE_INSTALL_PREFIX=/usr/lib/590ctrl
 cmake --build build-linux
@@ -21,9 +22,12 @@ STAGE=$(mktemp -d)
 trap 'rm -rf "$STAGE"' EXIT
 DESTDIR="$STAGE" cmake --install build-linux
 strip --strip-unneeded "$STAGE/usr/lib/590ctrl/bin/590Ctrl"
-for need in lib/libQt6Core.so.6 plugins/platforms/libqxcb.so plugins/multimedia/libffmpegmediaplugin.so; do
+for need in lib/libQt6Core.so.6 plugins/platforms/libqxcb.so plugins/multimedia/libffmpegmediaplugin.so \
+            share/590ctrl/DeepCw/model.onnx; do
     [ -e "$STAGE/usr/lib/590ctrl/$need" ] || { echo "missing $need" >&2; exit 1; }
 done
+
+ls "$STAGE"/usr/lib/590ctrl/lib/libonnxruntime.so.* > /dev/null || { echo "missing ONNX Runtime" >&2; exit 1; }
 
 mkdir -p "$STAGE/usr/bin" "$STAGE/usr/share/applications" \
     "$STAGE/usr/share/icons/hicolor/512x512/apps" "$STAGE/usr/share/licenses/590ctrl"

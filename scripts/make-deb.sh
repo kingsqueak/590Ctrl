@@ -11,6 +11,7 @@ VERSION=$(sed -n 's/^project(590Ctrl VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
 ARCH=$(dpkg --print-architecture)
 [ -n "$VERSION" ] || { echo "Could not read the project version" >&2; exit 1; }
 
+./scripts/fetch-onnxruntime.sh   # for the DeepCW decoder
 cmake -S . -B build-deb -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build-deb
 # The runner has no display. offscreen is enough for the unit tests.
@@ -26,6 +27,13 @@ mkdir -p "$STAGE/DEBIAN" \
 
 install -m 0755 build-deb/590Ctrl "$STAGE/usr/bin/590Ctrl"
 strip --strip-unneeded "$STAGE/usr/bin/590Ctrl"
+# DeepCW: its model, and ONNX Runtime where the program looks for it.
+mkdir -p "$STAGE/usr/lib/590ctrl" "$STAGE/usr/share/590ctrl/DeepCw" "$STAGE/usr/share/doc/590ctrl/onnxruntime"
+install -m 0644 third_party/onnxruntime/lib/libonnxruntime.so.*.*.* "$STAGE/usr/lib/590ctrl/"
+install -m 0644 resources/deepcw/model.onnx resources/deepcw/model.onnx.json resources/deepcw/LICENSE \
+    resources/deepcw/README.md "$STAGE/usr/share/590ctrl/DeepCw/"
+install -m 0644 third_party/onnxruntime/LICENSE third_party/onnxruntime/ThirdPartyNotices.txt \
+    "$STAGE/usr/share/doc/590ctrl/onnxruntime/"
 install -m 0644 resources/590Ctrl.png \
     "$STAGE/usr/share/icons/hicolor/512x512/apps/590ctrl.png"
 
@@ -103,6 +111,8 @@ Description: Kenwood TS-590SG control panel
  Qt 6 panel for a Kenwood TS-590SG over USB CAT. It also serves TCI,
  so programs such as WSJT-X, fldigi and an RF amplifier can use the
  radio without opening the serial port themselves.
+ .
+ Includes the DeepCW Morse decoder with its model and ONNX Runtime.
  .
  Built against this Ubuntu release's Qt 6. apt installs the libraries.
  The user who operates the radio needs to be in the dialout group.

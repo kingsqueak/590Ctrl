@@ -8,6 +8,7 @@ qt=${1:?path to the official Qt}
 cd "$(dirname "$0")/.."
 
 version=$(sed -n 's/^project(590Ctrl VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
+./scripts/fetch-onnxruntime.sh win-x64   # for the DeepCW decoder
 cmake -S . -B build-win -A x64 -DCMAKE_PREFIX_PATH="$qt"
 cmake --build build-win --config Release
 # The tests need Qt's DLLs, and have no display here.
@@ -18,6 +19,9 @@ rm -rf build-win/stage
 # Qt's deploy step needs an absolute path.
 cmake --install build-win --config Release --prefix "$(cygpath -m "$PWD/$stage")"
 cp LICENSE "$stage/"
+for need in bin/onnxruntime.dll bin/DeepCw/model.onnx; do
+  [ -e "$stage/$need" ] || { echo "missing $need" >&2; exit 1; }
+done
 # A fresh Windows may not have the Visual C++ runtime; Microsoft allows shipping it.
 for dll in vcruntime140.dll vcruntime140_1.dll msvcp140.dll; do
   [ -e "$stage/bin/$dll" ] || cp "/c/Windows/System32/$dll" "$stage/bin/"

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(590Ctrl VERSION 0.17.0 DESCRIPTION "Kenwood TS-590SG control" LANGUAGES CXX)
+project(590Ctrl VERSION 0.17.1 DESCRIPTION "Kenwood TS-590SG control" LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -115,6 +115,17 @@ set_target_properties(590Ctrl PROPERTIES
 # For the self-contained Linux packages and the Windows zip: `cmake --install`
 # copies the Qt libraries and plugins in beside the program.
 install(TARGETS 590Ctrl BUNDLE DESTINATION . RUNTIME DESTINATION bin)
+# DeepCW's model and ONNX Runtime, where the decoder looks for them: beside
+# the program on Windows, under the prefix's share and lib on Linux.
+if(DEEPCW AND WIN32)
+    install(FILES ${DEEPCW_MODEL_FILES} DESTINATION bin/DeepCw)
+    install(FILES ${ONNXRUNTIME_LIBRARY} DESTINATION bin)
+    install(FILES ${ONNXRUNTIME_NOTICES} DESTINATION onnxruntime)
+elseif(DEEPCW AND NOT APPLE)
+    install(FILES ${DEEPCW_MODEL_FILES} DESTINATION share/590ctrl/DeepCw)
+    install(FILES ${ONNXRUNTIME_LIBRARY} DESTINATION lib)
+    install(FILES ${ONNXRUNTIME_NOTICES} DESTINATION share/590ctrl/onnxruntime)
+endif()
 qt_generate_deploy_app_script(TARGET 590Ctrl OUTPUT_SCRIPT deploy_script NO_UNSUPPORTED_PLATFORM_ERROR)
 install(SCRIPT ${deploy_script})
 
@@ -136,7 +147,7 @@ if(BUILD_TESTING)
         foreach(file ${ONNXRUNTIME_LIBRARY} resources/deepcw/model.onnx resources/deepcw/model.onnx.json)
             get_filename_component(path "${file}" ABSOLUTE)
             get_filename_component(name "${file}" NAME)
-            file(CREATE_LINK "${path}" "${DEEPCW_TEST_DIR}/${name}" SYMBOLIC)
+            file(CREATE_LINK "${path}" "${DEEPCW_TEST_DIR}/${name}" COPY_ON_ERROR SYMBOLIC)
         endforeach()
         set_tests_properties(tst_deepcw PROPERTIES ENVIRONMENT "CTRL590_DEEPCW_DIR=${DEEPCW_TEST_DIR}")
     endif()

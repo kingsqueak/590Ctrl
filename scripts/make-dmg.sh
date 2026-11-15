@@ -63,6 +63,12 @@ for needed in Frameworks/QtCore.framework Frameworks/QtNetwork.framework Framewo
               PlugIns/platforms/libqcocoa.dylib PlugIns/tls; do
     [ -e "$APP/Contents/$needed" ] || { echo "missing $needed" >&2; failed=1; }
 done
+# The DeepCW decoder, when ONNX Runtime was there to build with.
+if [ -e third_party/onnxruntime/include/onnxruntime_cxx_api.h ]; then
+    [ -e "$APP/Contents/Resources/DeepCw/model.onnx" ] || { echo "missing the DeepCW model" >&2; failed=1; }
+    ls "$APP"/Contents/Frameworks/libonnxruntime.*.dylib >/dev/null 2>&1 || { echo "missing ONNX Runtime" >&2; failed=1; }
+fi
+[ -e "$APP/Contents/Frameworks/QtMultimedia.framework" ] || { echo "missing QtMultimedia" >&2; failed=1; }
 lipo -archs "$APP/Contents/MacOS/590Ctrl" | grep -q 'x86_64 arm64\|arm64 x86_64' || {
     echo "not universal" >&2
     failed=1

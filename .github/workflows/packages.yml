@@ -135,6 +135,10 @@ jobs:
             -m qtserialport qtwebsockets qtmultimedia -O "$RUNNER_TEMP/Qt"
           command -v ninja || brew install ninja
 
+      # For the DeepCW decoder.
+      - name: Fetch ONNX Runtime
+        run: ./scripts/fetch-onnxruntime.sh osx-arm64
+
       - name: Build the DMG
         run: ./scripts/make-dmg.sh "$RUNNER_TEMP/Qt/6.12.0/macos"
 

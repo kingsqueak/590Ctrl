@@ -5,9 +5,32 @@
 A desktop control panel for the **Kenwood TS-590SG** over its USB port, for
 macOS, Linux and Windows. Written in C++20 with Qt 6.
 
-![590Ctrl with the tabs below the operating controls](docs/main-0.16.png)
+![590Ctrl with the tabs below the operating controls](docs/main-0.17.png)
 
-Version 0.16.0 · Licensed under the [GPL-3.0](LICENSE).
+Version 0.17.0 · Licensed under the [GPL-3.0](LICENSE).
+
+## New in 0.17: an advanced CW decoder and a tuning display
+
+<img src="docs/cw-tuning-0.17.png" alt="The CW tuning display: a signal just above the red pitch line" width="300" align="right">
+
+The CW tab now copies and tunes CW much better.
+
+- **DeepCW decoder:** a neural network that listens to the radio's USB audio
+  and prints what it hears. It copies weak, fading and hand-sent CW that the
+  radio's own decoder misses, 2 to 4 seconds behind the signal. Choose
+  **DeepCW** beside **DECODE**. It runs entirely on your computer.
+- **Word forming:** **WORDS** puts back the spaces a decoder leaves out, so
+  `CQSSK1XMK1XM` reads `CQ SS K1XM K1XM`. It works with DeepCW and with the
+  radio's decoder.
+- **Tuning display:** the received audio from 100 to 1300 Hz, with a red line
+  at your CW pitch. Tune until a station's peak sits on the line and you are
+  zero beat with it. The line follows the Pitch slider.
+- **Help:** **Help → 590Ctrl Help** now explains every control in the app.
+
+DeepCW is in the macOS app on Apple silicon for now; the Linux and Windows
+packages and Intel Macs have the tuning display, word forming and the radio's
+decoder. The model is from [deepcw-engine](https://github.com/e04/deepcw-engine)
+(MIT) and runs in [ONNX Runtime](https://onnxruntime.ai/) (MIT).
 
 ## Features
 
@@ -24,7 +47,7 @@ Version 0.16.0 · Licensed under the [GPL-3.0](LICENSE).
 
 Tabs beside the controls:
 
-![590Ctrl with the tabs beside the operating controls](docs/side-0.16.png)
+![590Ctrl with the tabs beside the operating controls](docs/side-0.17.png)
 
 Tabs hidden, in the light appearance:
 
@@ -66,8 +89,14 @@ Tabs hidden, in the light appearance:
   CW TUNE
 - Keyboard CW: type a line and press Enter; longer text is fed to the radio as
   its buffer frees up, and STOP drops what hasn't been keyed yet
-- The TS-590SG's Morse decoder with its threshold and a scrolling text window
-  (CW and CW-R only; DECODE is greyed out in other modes)
+- A tuning display under CW TUNE: the received audio from 100 to 1300 Hz with
+  a red line at the CW pitch, for zero beating a station (CW and CW-R, using
+  the radio's USB audio)
+- Two Morse decoders (CW and CW-R only; DECODE is greyed out in other modes):
+  the TS-590SG's own, with its threshold, and **DeepCW**, a neural network on
+  the radio's USB audio that copies weak, fading and hand-sent CW (macOS on
+  Apple silicon; it needs a pitch of 400 Hz or more)
+- **WORDS** puts back the word spaces a decoder misses
 
 **QRZ** tab
 - Look up a callsign on QRZ.com (XML data service) and see every field QRZ
@@ -149,6 +178,7 @@ Tabs hidden, in the light appearance:
 - Built-in simulator for trying the app without a radio
 - CAT monitor (**View → CAT Monitor**) showing raw radio traffic
 - **View → Appearance** (System, Light, Dark)
+- **Help → 590Ctrl Help** (F1, or ⌘? on macOS): a guide to every control
 - Update check: at start the app asks GitHub for the latest release, and a note
   in the top line links to a newer one (✕ hides it until the next
   version); **Help → Check for Updates…** asks on demand. Nothing is downloaded
@@ -174,9 +204,9 @@ yet, so please report what you find.
 
 ## Installing on macOS
 
-Download `590Ctrl-0.16.0.dmg` from the
+Download `590Ctrl-0.17.0.dmg` from the
 [Releases](https://github.com/kingsqueak/590Ctrl/releases) page, open it, and
-drag **590Ctrl-0.16.0** to **Applications**. The app's name carries its version;
+drag **590Ctrl-0.17.0** to **Applications**. The app's name carries its version;
 delete the older copy (0.10 was plain `590Ctrl.app`) once the new
 one runs. Settings are kept. It runs on macOS 26.0 or later, on both
 Apple silicon and Intel Macs.
@@ -186,7 +216,7 @@ once, then go to **System Settings → Privacy & Security** and click **Open
 Anyway**. Alternatively, run:
 
 ```sh
-xattr -dr com.apple.quarantine /Applications/590Ctrl-0.16.0.app
+xattr -dr com.apple.quarantine /Applications/590Ctrl-0.17.0.app
 ```
 
 ## Installing on Ubuntu
@@ -195,11 +225,11 @@ Packages for Ubuntu 26.04 LTS are on the
 [Releases](https://github.com/kingsqueak/590Ctrl/releases) page. They use
 that release's Qt 6, which apt installs with the package.
 
-- `590ctrl_0.16.0-1_amd64.deb` for Intel and AMD PCs
-- `590ctrl_0.16.0-1_arm64.deb` for arm64
+- `590ctrl_0.17.0-1_amd64.deb` for Intel and AMD PCs
+- `590ctrl_0.17.0-1_arm64.deb` for arm64
 
 ```sh
-sudo apt install ./590ctrl_0.16.0-1_amd64.deb
+sudo apt install ./590ctrl_0.17.0-1_amd64.deb
 ```
 
 The account that operates the radio needs to be in the `dialout` group.
@@ -220,11 +250,15 @@ Multimedia), CMake 3.21+, Ninja and a C++20 compiler.
 brew install qt cmake ninja
 git clone https://github.com/kingsqueak/590Ctrl.git
 cd 590Ctrl
+scripts/fetch-onnxruntime.sh              # optional: ONNX Runtime, for the DeepCW decoder
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 (cd build && ctest --output-on-failure)   # optional: run the tests
 open build/590Ctrl.app
 ```
+
+Without ONNX Runtime in `third_party/onnxruntime` the app builds with no
+DeepCW decoder; everything else is the same.
 
 Homebrew's Qt is built for the macOS version it's installed on, so an app
 bundled from it only runs on that version or newer. To make a DMG for older
@@ -277,6 +311,7 @@ self-contained and support older macOS versions. One way to get them is
 python3 -m venv aqtenv && ./aqtenv/bin/pip install aqtinstall
 ./aqtenv/bin/aqt install-qt mac desktop 6.12.0 clang_64 -m qtserialport qtwebsockets qtmultimedia -O ~/Qt
 
+scripts/fetch-onnxruntime.sh    # for the DeepCW decoder
 scripts/make-dmg.sh ~/Qt/6.12.0/macos
 ```
 
@@ -402,9 +437,12 @@ points read off a TS-590SG's display:
 | `src/core/EqPresetLibrary.*`, `EqAutoLoader.*` | EQ presets and per-mode auto-load |
 | `src/core/TciServer.*` | TCI (WebSocket) server: CAT control and audio for TCI programs |
 | `src/core/RadioAudio.*`, `Resampler.*` | The radio's USB audio codec, and rate conversion for TCI clients |
+| `src/core/DeepCwDecoder.*`, `CwWordFormer.*` | The DeepCW Morse decoder (its model is in `resources/deepcw/`) and word forming |
+| `src/core/AudioSpectrum.*` | Audio levels by frequency, for the CW tuning display |
 | `src/core/SerialTransport.*` | QSerialPort transport and port discovery |
 | `src/core/SimulatorTransport.*` | In-process fake TS-590SG for tests and offline use |
 | `src/app/` | Qt Widgets UI |
+| `resources/help.html` | The guide shown by Help → 590Ctrl Help |
 | `tests/` | QtTest suites (codec, link, radio, presets, QRZ, TCI server and resampler, against the simulator) |
 
 Protocol reference: Kenwood *TS-590S/SG PC Control Command Reference Guide*

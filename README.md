@@ -5,9 +5,13 @@
 A desktop control panel for the **Kenwood TS-590SG** over its USB port, for
 macOS, Linux and Windows. Written in C++20 with Qt 6.
 
+The earlier **TS-590S** works too since 0.17.2, as far as its command set goes:
+it has no TX tune power and no Morse decoder of its own (DeepCW decodes
+instead), and before firmware 2.00 its EQ curve is set through menus 030 and 031.
+
 ![590Ctrl with the tabs below the operating controls](docs/main-0.17.png)
 
-Version 0.17.1 · Licensed under the [GPL-3.0](LICENSE).
+Version 0.17.2 · Licensed under the [GPL-3.0](LICENSE).
 
 ## New in 0.17: an advanced CW decoder and a tuning display
 
@@ -204,9 +208,9 @@ yet, so please report what you find.
 
 ## Installing on macOS
 
-Download `590Ctrl-0.17.1.dmg` from the
+Download `590Ctrl-0.17.2.dmg` from the
 [Releases](https://github.com/kingsqueak/590Ctrl/releases) page, open it, and
-drag **590Ctrl-0.17.1** to **Applications**. The app's name carries its version;
+drag **590Ctrl-0.17.2** to **Applications**. The app's name carries its version;
 delete the older copy (0.10 was plain `590Ctrl.app`) once the new
 one runs. Settings are kept. It runs on macOS 26.0 or later, on both
 Apple silicon and Intel Macs.
@@ -216,7 +220,7 @@ once, then go to **System Settings → Privacy & Security** and click **Open
 Anyway**. Alternatively, run:
 
 ```sh
-xattr -dr com.apple.quarantine /Applications/590Ctrl-0.17.1.app
+xattr -dr com.apple.quarantine /Applications/590Ctrl-0.17.2.app
 ```
 
 ## Installing on Ubuntu
@@ -225,11 +229,11 @@ Packages for Ubuntu 26.04 LTS are on the
 [Releases](https://github.com/kingsqueak/590Ctrl/releases) page. They use
 that release's Qt 6, which apt installs with the package.
 
-- `590ctrl_0.17.1-1_amd64.deb` for Intel and AMD PCs
-- `590ctrl_0.17.1-1_arm64.deb` for arm64
+- `590ctrl_0.17.2-1_amd64.deb` for Intel and AMD PCs
+- `590ctrl_0.17.2-1_arm64.deb` for arm64
 
 ```sh
-sudo apt install ./590ctrl_0.17.1-1_amd64.deb
+sudo apt install ./590ctrl_0.17.2-1_amd64.deb
 ```
 
 The account that operates the radio needs to be in the `dialout` group.

@@ -5,9 +5,9 @@
 A desktop control panel for the **Kenwood TS-590SG** over its USB port, for
 macOS, Linux and Windows. Written in C++20 with Qt 6.
 
-![590Ctrl connected to a TS-590SG](docs/screenshot-0.12.png)
+![590Ctrl with the tabs below the operating controls](docs/main-0.16.png)
 
-Version 0.15.1 · Licensed under the [GPL-3.0](LICENSE).
+Version 0.16.0 · Licensed under the [GPL-3.0](LICENSE).
 
 ## Features
 
@@ -21,6 +21,14 @@ Version 0.15.1 · Licensed under the [GPL-3.0](LICENSE).
 - **Setup** holds what is set once: the port and speed, the TCI server, the
   USB audio levels, tune power, carrier level, VOX delay and the transmit
   audio filter
+
+Tabs beside the controls:
+
+![590Ctrl with the tabs beside the operating controls](docs/side-0.16.png)
+
+Tabs hidden, in the light appearance:
+
+![590Ctrl with the tabs hidden](docs/compact-0.16.png)
 
 **Tuning and modes**
 - VFO A and B displays: scroll over any digit to tune it (one step per wheel
@@ -123,6 +131,9 @@ Version 0.15.1 · Licensed under the [GPL-3.0](LICENSE).
   into the User curve; see [Equalizer notes](#equalizer-notes)
 
 **Mini window** (**View → Mini Window**, ⌘⇧M, or **Mini** at the top right)
+
+<img src="docs/mini-0.16.png" alt="The mini window" width="252">
+
 - A small window to park in a corner of the screen: VFO A and B with A, B and
   A=B, the meter, MUT and a large hold-to-transmit TX
 - Drag it from corner size up to the full window's size; everything scales
@@ -163,9 +174,9 @@ yet, so please report what you find.
 
 ## Installing on macOS
 
-Download `590Ctrl-0.15.1.dmg` from the
+Download `590Ctrl-0.16.0.dmg` from the
 [Releases](https://github.com/kingsqueak/590Ctrl/releases) page, open it, and
-drag **590Ctrl-0.15.1** to **Applications**. The app's name carries its version;
+drag **590Ctrl-0.16.0** to **Applications**. The app's name carries its version;
 delete the older copy (0.10 was plain `590Ctrl.app`) once the new
 one runs. Settings are kept. It runs on macOS 26.0 or later, on both
 Apple silicon and Intel Macs.
@@ -175,7 +186,7 @@ once, then go to **System Settings → Privacy & Security** and click **Open
 Anyway**. Alternatively, run:
 
 ```sh
-xattr -dr com.apple.quarantine /Applications/590Ctrl-0.15.1.app
+xattr -dr com.apple.quarantine /Applications/590Ctrl-0.16.0.app
 ```
 
 ## Installing on Ubuntu
@@ -184,11 +195,11 @@ Packages for Ubuntu 26.04 LTS are on the
 [Releases](https://github.com/kingsqueak/590Ctrl/releases) page. They use
 that release's Qt 6, which apt installs with the package.
 
-- `590ctrl_0.15.1-1_amd64.deb` for Intel and AMD PCs
-- `590ctrl_0.15.1-1_arm64.deb` for arm64
+- `590ctrl_0.16.0-1_amd64.deb` for Intel and AMD PCs
+- `590ctrl_0.16.0-1_arm64.deb` for arm64
 
 ```sh
-sudo apt install ./590ctrl_0.15.1-1_amd64.deb
+sudo apt install ./590ctrl_0.16.0-1_amd64.deb
 ```
 
 The account that operates the radio needs to be in the `dialout` group.

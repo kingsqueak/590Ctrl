@@ -5,6 +5,7 @@
 #include <QMediaDevices>
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 
 namespace ts590 {
@@ -34,17 +35,26 @@ QAudioDevice findDevice(const QList<QAudioDevice> &devices, const QByteArray &id
     return {};
 }
 
-// 48 kHz stereo 16-bit if the device takes it, as the 590's codec does;
-// float otherwise.
+// 48 kHz stereo if the device takes it, as the 590's codec does, 16-bit
+// before float. Otherwise the device's own format (on Windows the one set in
+// Sound settings, the only one it opens with), converted here.
 QAudioFormat formatFor(const QAudioDevice &device)
 {
     QAudioFormat format;
     format.setSampleRate(RadioAudio::kSampleRate);
     format.setChannelCount(RadioAudio::kChannels);
-    format.setSampleFormat(QAudioFormat::Int16);
-    if (!device.isFormatSupported(format))
-        format.setSampleFormat(QAudioFormat::Float);
-    return format;
+    for (const auto sampleFormat : {QAudioFormat::Int16, QAudioFormat::Float}) {
+        format.setSampleFormat(sampleFormat);
+        if (device.isFormatSupported(format))
+            return format;
+    }
+    const QAudioFormat preferred = device.preferredFormat();
+    return preferred.isValid() ? preferred : format;
+}
+
+QString describe(const QAudioFormat &format)
+{
+    return QStringLiteral("%1 Hz, %2 ch").arg(format.sampleRate()).arg(format.channelCount());
 }
 
 int bufferBytes(const QAudioFormat &format, int ms)
@@ -145,11 +155,14 @@ bool RadioAudio::start()
     m_sink->setBufferSize(bufferBytes(m_outputFormat, kOutputBufferMs));
     m_out = m_sink->start();
     if (!m_in || !m_out || m_source->error() != QtAudio::NoError || m_sink->error() != QtAudio::NoError) {
-        m_error = tr("Couldn't open the radio's USB audio (%1 / %2).")
-                      .arg(m_inputDevice.description(), m_outputDevice.description());
+        m_error = tr("Couldn't open the radio's USB audio (%1 at %2 / %3 at %4).")
+                      .arg(m_inputDevice.description(), describe(m_inputFormat), m_outputDevice.description(),
+                           describe(m_outputFormat));
         stop();
         return false;
     }
+    m_inputRate = RateConverter(m_inputFormat.sampleRate(), kSampleRate, kChannels);
+    m_outputRate = RateConverter(kSampleRate, m_outputFormat.sampleRate(), 1);
     connect(m_in, &QIODevice::readyRead, this, &RadioAudio::readInput);
     // A device unplugged while running reports through the state change.
     connect(m_source, &QAudioSource::stateChanged, this, [this](QtAudio::State) {
@@ -206,14 +219,19 @@ void RadioAudio::readInput()
             out[f * kChannels + c] = m_inputFormat.normalizedSampleValue(s);
         }
     }
-    emit captured(out);
+    emit captured(m_inputFormat.sampleRate() == kSampleRate ? out : m_inputRate.process(out.constData(), frames));
 }
 
 void RadioAudio::play(const float *samples, qsizetype count)
 {
     if (!isRunning())
         return;
-    m_playQueue.insert(m_playQueue.end(), samples, samples + count);
+    if (m_outputFormat.sampleRate() == kSampleRate) {
+        m_playQueue.insert(m_playQueue.end(), samples, samples + count);
+    } else {
+        const QList<float> converted = m_outputRate.process(samples, count);
+        m_playQueue.insert(m_playQueue.end(), converted.cbegin(), converted.cend());
+    }
     pumpOutput();
 }
 
@@ -229,7 +247,8 @@ qsizetype RadioAudio::queuedFrames() const
         const qsizetype pending = m_sink->bufferSize() - m_sink->bytesFree();
         frames += std::max<qsizetype>(pending, 0) / m_outputFormat.bytesPerFrame();
     }
-    return frames;
+    // Counted at the device's rate; the caller's frames are at 48 kHz.
+    return frames * kSampleRate / std::max(m_outputFormat.sampleRate(), 1);
 }
 
 void RadioAudio::pumpOutput()
@@ -243,15 +262,21 @@ void RadioAudio::pumpOutput()
         return;
     QByteArray bytes(frames * frameBytes, Qt::Uninitialized);
     char *p = bytes.data();
-    const bool int16 = m_outputFormat.sampleFormat() == QAudioFormat::Int16;
+    const QAudioFormat::SampleFormat sampleFormat = m_outputFormat.sampleFormat();
     for (qsizetype f = 0; f < frames; ++f) {
         const float v = std::clamp(m_playQueue.front(), -1.f, 1.f);
         m_playQueue.pop_front();
         for (int c = 0; c < channels; ++c) {
-            if (int16) {
+            if (sampleFormat == QAudioFormat::Int16) {
                 const qint16 s = qint16(std::lround(v * 32767.f));
                 std::memcpy(p, &s, sizeof s);
                 p += sizeof s;
+            } else if (sampleFormat == QAudioFormat::Int32) {
+                const qint32 s = qint32(std::llround(double(v) * 2147483647.0));
+                std::memcpy(p, &s, sizeof s);
+                p += sizeof s;
+            } else if (sampleFormat == QAudioFormat::UInt8) {
+                *p++ = char(quint8(std::lround(v * 127.f) + 128));
             } else {
                 std::memcpy(p, &v, sizeof v);
                 p += sizeof v;

@@ -101,6 +101,8 @@ if(DEEPCW AND APPLE)
     set_source_files_properties(${ONNXRUNTIME_NOTICES} PROPERTIES MACOSX_PACKAGE_LOCATION Resources/onnxruntime)
 endif()
 set_target_properties(590Ctrl PROPERTIES
+    # A window program on Windows: without this a console window opens with it.
+    WIN32_EXECUTABLE ON
     MACOSX_BUNDLE ON
     MACOSX_BUNDLE_BUNDLE_NAME 590Ctrl
     MACOSX_BUNDLE_ICON_FILE 590Ctrl.icns

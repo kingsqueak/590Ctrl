@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Resampler.h"
+
 #include <QAudioDevice>
 #include <QAudioFormat>
 #include <QList>
@@ -16,6 +18,8 @@ namespace ts590 {
 
 // The radio's USB audio codec: receive audio in, transmit audio out, both
 // at 48 kHz (the codec's native rate, so nothing is resampled on its side).
+// Windows opens a device only in the format set in its Sound settings, which
+// may be 44.1 kHz or mono; then the device runs in that and it's converted here.
 class RadioAudio : public QObject
 {
     Q_OBJECT
@@ -79,7 +83,9 @@ private:
     QAudioSink *m_sink = nullptr;
     QIODevice *m_in = nullptr;
     QIODevice *m_out = nullptr;
-    std::deque<float> m_playQueue;   // mono
+    RateConverter m_inputRate;       // device rate to 48 kHz
+    RateConverter m_outputRate;      // 48 kHz to device rate
+    std::deque<float> m_playQueue;   // mono, at the output device's rate
     QTimer m_pump;
     QString m_error;
     QList<const QObject *> m_users;

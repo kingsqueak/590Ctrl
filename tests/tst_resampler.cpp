@@ -86,6 +86,45 @@ private slots:
         QCOMPARE(got, expected);
     }
 
+    void convertsBetweenAnyRates()
+    {
+        // A device Windows runs at 44.1 kHz, in each direction.
+        RateConverter up(44100, 48000, 2);
+        const QList<float> in = tone(1500, 44100, 44100, 2);
+        const QList<float> out = up.process(in.constData(), 44100);
+        QVERIFY(std::abs(out.size() / 2 - 48000) <= 32);
+        QVERIFY(std::abs(level(out, 2, 0) - 1.f) < 0.01f);
+        QVERIFY(std::abs(level(out, 2, 1) - 1.f) < 0.01f);
+        // Still 1500 Hz: it matches a 48 kHz tone sample for sample.
+        const QList<float> expected = tone(1500, 48000, 48000, 2);
+        for (qsizetype i = 2000; i < out.size(); i += 2)
+            QVERIFY(std::abs(out[i] - expected[i]) < 0.01f);
+
+        RateConverter down(48000, 44100, 1);
+        const QList<float> low = tone(1500, 48000, 48000);
+        const QList<float> lowOut = down.process(low.constData(), 48000);
+        QVERIFY(std::abs(lowOut.size() - 44100) <= 32);
+        QVERIFY(std::abs(level(lowOut) - 1.f) < 0.01f);
+        // 23 kHz would fold to 21.1 kHz at 44.1 kHz without the filter.
+        RateConverter alias(48000, 44100, 1);
+        const QList<float> high = tone(23000, 48000, 48000);
+        QVERIFY(level(alias.process(high.constData(), 48000)) < 0.01f);
+
+        RateConverter same(48000, 48000, 2);
+        QCOMPARE(same.process(expected.constData(), 100), expected.first(200));
+    }
+
+    void rateConverterStreamsAcrossCalls()
+    {
+        const QList<float> in = tone(700, 44100, 4410);
+        RateConverter whole(44100, 48000, 1), pieces(44100, 48000, 1);
+        const QList<float> expected = whole.process(in.constData(), in.size());
+        QList<float> got;
+        for (qsizetype i = 0; i < in.size(); i += 333)
+            got.append(pieces.process(in.constData() + i, std::min<qsizetype>(333, in.size() - i)));
+        QCOMPARE(got, expected);
+    }
+
     void recognisesTheRadiosCodec()
     {
         QVERIFY(RadioAudio::isCodecName(QStringLiteral("USB Audio CODEC")));                      // macOS
